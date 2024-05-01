@@ -173,6 +173,9 @@ extensions = [
     Extension("hyperbolicTSNE.hyperbolic_barnes_hut.tsne",
               sources=["hyperbolicTSNE/hyperbolic_barnes_hut/tsne.pyx"],
               language="c++"),
+    Extension("hyperbolicTSNE.hyperbolic_barnes_hut.lotsne",
+              sources=["hyperbolicTSNE/hyperbolic_barnes_hut/lotsne.pyx"],
+              language="c++"),
 ]
 
 
