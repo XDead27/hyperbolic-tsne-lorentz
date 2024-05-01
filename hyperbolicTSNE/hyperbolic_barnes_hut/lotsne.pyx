@@ -22,7 +22,7 @@ cdef char* EMPTY_STRING = ""
 # Smallest strictly positive value that can be represented by floating
 # point numbers for different precision levels. This is useful to avoid
 # taking the log of zero when computing the KL divergence.
-cdef float DTYPE_tINY = np.finfo(np.float32).tiny
+cdef float FLOAT32_TINY = np.finfo(np.float32).tiny
 
 # Useful to void division by zero or divergence to +inf.
 cdef float FLOAT64_EPS = np.finfo(np.float64).eps
@@ -42,7 +42,7 @@ cdef double clamp(double n, double lower, double upper) nogil:
     return upper if t > upper else t
 
 ##################################################
-# QuadTree
+# OcTree
 ##################################################
 ctypedef np.npy_float64 DTYPE_t          # Type of X
 ctypedef np.npy_intp SIZE_t              # Type for indices and counters
@@ -50,7 +50,7 @@ ctypedef np.npy_int32 INT32_t            # Signed 32 bit integer
 ctypedef np.npy_uint32 UINT32_t          # Unsigned 32 bit integer
 
 cdef struct Cell:
-    # Base storage structure for cells in a QuadTree object
+    # Base storage structure for cells in a OcTree object
 
     # Tree structure
     SIZE_t parent              # Parent cell of this cell
@@ -180,18 +180,18 @@ cdef DTYPE_t lorentz_factor(DTYPE_t sq_n) nogil:
 cdef DTYPE_t euclidean_mean(DTYPE_t fst, DTYPE_t snd) nogil:
     return (fst + snd) / 2
 
-cdef DTYPE_t[3] mid_point(DTYPE_t[3] min_v, DTYPE_t[3] max_v) nogil:
-    return [euclidean_mean(min_v[0], max_v[0]), 
-            euclidean_mean(min_v[1], max_v[1]),
-            euclidean_mean(min_v[2], max_v[2])]
+# cdef DTYPE_t[3] mid_point(DTYPE_t[3] min_v, DTYPE_t[3] max_v) nogil:
+#     return [euclidean_mean(min_v[0], max_v[0]), 
+#             euclidean_mean(min_v[1], max_v[1]),
+#             euclidean_mean(min_v[2], max_v[2])]
 
 # cdef DTYPE_t get_max_for_polar_rect(DTYPE_t[2] min_bounds, DTYPE_t[2] max_bounds) nogil:
 #     return max(distance_polar(max_bounds[RANGE], min_bounds[ANGLE], max_bounds[RANGE], max_bounds[ANGLE]),
 #                distance_polar(max_bounds[RANGE], min_bounds[ANGLE], min_bounds[RANGE], max_bounds[ANGLE]),
 #                distance_polar(max_bounds[RANGE], min_bounds[ANGLE], min_bounds[RANGE], min_bounds[ANGLE]))
 
-cdef class _QuadTree:
-    """Array-based representation of a QuadTree.
+cdef class _OcTree:
+    """Array-based representation of a OcTree.
 
     This class is currently working for indexing 2D data (regular QuadTree) and
     for indexing 3D data (OcTree). It is planned to split the 2 implementations
@@ -300,7 +300,7 @@ cdef class _QuadTree:
             max_bounds[i] = M[i]
 
             if self.verbose > 10:
-                printf("[QuadTree] bounding box axis %i : [%f, %f]\n",
+                printf("[OcTree] bounding box axis %i : [%f, %f]\n",
                        i, min_bounds[i], max_bounds[i])
 
         # Create the initial node with boundaries from the dataset
@@ -396,7 +396,7 @@ cdef class _QuadTree:
             max_bounds[i] = M[i]
 
             if self.verbose > 10:
-                printf("[QuadTree] bounding box axis %i : [%f, %f]\n",
+                printf("[OcTree] bounding box axis %i : [%f, %f]\n",
                        i, min_bounds[i], max_bounds[i])
 
         # Create the initial node with boundaries from the dataset
@@ -500,11 +500,7 @@ cdef class _QuadTree:
         cdef SIZE_t n_point = cell.cumulative_size
 
         if self.verbose > 10:
-            printf("[QuadTree] Inserting depth %li\n", cell.depth)
-
-        # Assert that the point is in the right range
-        if DEBUGFLAG:
-            self._check_point_in_cell(point, cell)
+            printf("[OcTree] Inserting depth %li\n", cell.depth)
 
         # If the cell is an empty leaf, insert the point in it
         if cell.cumulative_size == 0:
@@ -514,7 +510,7 @@ cdef class _QuadTree:
                 cell.barycenter[i] = point[i]
             cell.point_index = point_index
             if self.verbose > 10:
-                printf("[QuadTree] inserted point %li in cell %li\n",
+                printf("[OcTree] inserted point %li in cell %li\n",
                        point_index, cell_id)
             return cell_id
 
@@ -532,7 +528,7 @@ cdef class _QuadTree:
             # Insert child in the correct subtree
             selected_child = self._select_child(point, cell)
             if self.verbose > 49:
-                printf("[QuadTree] selected child %li\n", selected_child)
+                printf("[OcTree] selected child %li\n", selected_child)
             if selected_child == -1:
                 self.n_points += 1
                 return self._insert_point_in_new_child(point, cell, point_index)
@@ -543,7 +539,7 @@ cdef class _QuadTree:
         # If it is a duplicate, increase the size of the leaf and return.
         if self._is_duplicate(point, cell.barycenter):
             if self.verbose > 10:
-                printf("[QuadTree] found a duplicate!\n")
+                printf("[OcTree] found a duplicate!\n")
             cell.cumulative_size += 1
             self.n_points += 1
             return cell_id
@@ -616,11 +612,8 @@ cdef class _QuadTree:
         # Store the child cell in the correct place in children
         cell.children[cell_child_id] = child.cell_id
 
-        if DEBUGFLAG:
-            # Assert that the point is in the right range
-            self._check_point_in_cell(point, child)
         if self.verbose > 10:
-            printf("[QuadTree] inserted point %li in new child %li\n",
+            printf("[OcTree] inserted point %li in new child %li\n",
                    point_index, cell_id)
 
         return cell_id
@@ -630,7 +623,7 @@ cdef class _QuadTree:
         # If it is a duplicate, increase the size of the leaf and return.
         if self._is_duplicate(point, cell.barycenter):
             if self.verbose > 10:
-                printf("[QuadTree] found a duplicate!\n")
+                printf("[OcTree] found a duplicate!\n")
             cell.cumulative_size += 1
             self.n_points += 1
             return cell_id
@@ -741,7 +734,7 @@ cdef class _QuadTree:
         cdef bint res = True
         for i in range(self.n_dimensions):
             # Use EPSILON to avoid numerical error that would overgrow the tree
-            res &= fabsf(point1[i] - point2[i]) <= EPSILON
+            res &= fabs(point1[i] - point2[i]) <= EPSILON
         return res
 
 
@@ -953,7 +946,7 @@ cdef class _QuadTree:
         for i in range(self.n_dimensions):
             results[idx + i] = point[i] - cell.barycenter[i]
             results[idx_d] += results[idx + i] * results[idx + i]
-            duplicate &= fabsf(results[idx + i]) <= EPSILON
+            duplicate &= fabs(results[idx + i]) <= EPSILON
 
         # Do not compute self interactions
         if duplicate and cell.is_leaf:
@@ -1066,66 +1059,66 @@ cdef class _QuadTree:
     #                    self.capacity * sizeof(Cell))
     #
     #
-    # # Array manipulation methods, to convert it to numpy or to resize
-    # # self.cells array
-    #
-    # cdef np.ndarray _get_cell_ndarray(self):
-    #     """Wraps nodes as a NumPy struct array.
-    #
-    #     The array keeps a reference to this Tree, which manages the underlying
-    #     memory. Individual fields are publicly accessible as properties of the
-    #     Tree.
-    #     """
-    #     cdef np.npy_intp shape[1]
-    #     shape[0] = <np.npy_intp> self.cell_count
-    #     cdef np.npy_intp strides[1]
-    #     strides[0] = sizeof(Cell)
-    #     cdef np.ndarray arr
-    #     Py_INCREF(CELL_DTYPE)
-    #     arr = PyArray_NewFromDescr(<PyTypeObject *> np.ndarray,
-    #                                CELL_DTYPE, 1, shape,
-    #                                strides, <void*> self.cells,
-    #                                np.NPY_DEFAULT, None)
-    #     Py_INCREF(self)
-    #     if PyArray_SetBaseObject(arr, <PyObject*> self) < 0:
-    #         raise ValueError("Can't initialize array!")
-    #     return arr
-    #
-    # cdef int _resize(self, SIZE_t capacity) nogil except -1:
-    #     """Resize all inner arrays to `capacity`, if `capacity` == -1, then
-    #        double the size of the inner arrays.
-    #
-    #     Returns -1 in case of failure to allocate memory (and raise MemoryError)
-    #     or 0 otherwise.
-    #     """
-    #     if self._resize_c(capacity) != 0:
-    #         # Acquire gil only if we need to raise
-    #         with gil:
-    #             raise MemoryError()
-    #
-    # cdef int _resize_c(self, SIZE_t capacity=SIZE_MAX) nogil except -1:
-    #     """Guts of _resize
-    #
-    #     Returns -1 in case of failure to allocate memory (and raise MemoryError)
-    #     or 0 otherwise.
-    #     """
-    #     if capacity == self.capacity and self.cells != NULL:
-    #         return 0
-    #
-    #     if capacity == SIZE_MAX:
-    #         if self.capacity == 0:
-    #             capacity = 9  # default initial value to min
-    #         else:
-    #             capacity = 2 * self.capacity
-    #
-    #     safe_realloc(&self.cells, capacity)
-    #
-    #     # if capacity smaller than cell_count, adjust the counter
-    #     if capacity < self.cell_count:
-    #         self.cell_count = capacity
-    #
-    #     self.capacity = capacity
-    #     return 0
+    # Array manipulation methods, to convert it to numpy or to resize
+    # self.cells array
+   
+    cdef np.ndarray _get_cell_ndarray(self):
+        """Wraps nodes as a NumPy struct array.
+   
+        The array keeps a reference to this Tree, which manages the underlying
+        memory. Individual fields are publicly accessible as properties of the
+        Tree.
+        """
+        cdef np.npy_intp shape[1]
+        shape[0] = <np.npy_intp> self.cell_count
+        cdef np.npy_intp strides[1]
+        strides[0] = sizeof(Cell)
+        cdef np.ndarray arr
+        Py_INCREF(CELL_DTYPE)
+        arr = PyArray_NewFromDescr(<PyTypeObject *> np.ndarray,
+                                   CELL_DTYPE, 1, shape,
+                                   strides, <void*> self.cells,
+                                   np.NPY_DEFAULT, None)
+        Py_INCREF(self)
+        if PyArray_SetBaseObject(arr, <PyObject*> self) < 0:
+            raise ValueError("Can't initialize array!")
+        return arr
+   
+    cdef int _resize(self, SIZE_t capacity) nogil except -1:
+        """Resize all inner arrays to `capacity`, if `capacity` == -1, then
+           double the size of the inner arrays.
+   
+        Returns -1 in case of failure to allocate memory (and raise MemoryError)
+        or 0 otherwise.
+        """
+        if self._resize_c(capacity) != 0:
+            # Acquire gil only if we need to raise
+            with gil:
+                raise MemoryError()
+   
+    cdef int _resize_c(self, SIZE_t capacity=SIZE_MAX) nogil except -1:
+        """Guts of _resize
+   
+        Returns -1 in case of failure to allocate memory (and raise MemoryError)
+        or 0 otherwise.
+        """
+        if capacity == self.capacity and self.cells != NULL:
+            return 0
+   
+        if capacity == SIZE_MAX:
+            if self.capacity == 0:
+                capacity = 9  # default initial value to min
+            else:
+                capacity = 2 * self.capacity
+   
+        safe_realloc(&self.cells, capacity)
+   
+        # if capacity smaller than cell_count, adjust the counter
+        if capacity < self.cell_count:
+            self.cell_count = capacity
+   
+        self.capacity = capacity
+        return 0
 
     def get_cell(self, point):
         """return the id of the cell containing the query point or raise
@@ -1156,7 +1149,7 @@ cdef class _QuadTree:
         if cell.is_leaf:
             if self._is_duplicate(cell.barycenter, point):
                 if self.verbose > 99:
-                    printf("[QuadTree] Found point in cell: %li\n",
+                    printf("[OcTree] Found point in cell: %li\n",
                            cell.cell_id)
                 return cell_id
             with gil:
@@ -1165,7 +1158,7 @@ cdef class _QuadTree:
         selected_child = self._select_child(point, cell)
         if selected_child > 0:
             if self.verbose > 99:
-                printf("[QuadTree] Selected_child: %li\n", selected_child)
+                printf("[OcTree] Selected_child: %li\n", selected_child)
             return self._get_cell(point, selected_child)
         with gil:
             raise ValueError("Query point not in the Tree.")
@@ -1174,7 +1167,7 @@ cdef class _QuadTree:
 
     def __reduce__(self):
         """Reduce re-implementation, for pickling."""
-        return (_QuadTree, (self.n_dimensions, self.verbose), self.__getstate__())
+        return (_OcTree, (self.n_dimensions, self.verbose), self.__getstate__())
 
     def __getstate__(self):
         """Getstate re-implementation, for pickling."""
@@ -1184,7 +1177,7 @@ cdef class _QuadTree:
         d["cell_count"] = self.cell_count
         d["capacity"] = self.capacity
         d["n_points"] = self.n_points
-        d["cells"] = self._get_cell_ndarray().base
+        d["cells"] = self._get_cell_ndarray()
         return d
 
     def __setstate__(self, d):
@@ -1215,74 +1208,6 @@ cdef class _QuadTree:
             pfrom=&cell_mem_view[0],
             size=self.capacity * sizeof(Cell),
         )
-
-    # Array manipulation methods, to convert it to numpy or to resize
-    # self.cells array
-
-    cdef Cell[:] _get_cell_ndarray(self):
-        """Wraps nodes as a NumPy struct array.
-
-        The array keeps a reference to this Tree, which manages the underlying
-        memory. Individual fields are publicly accessible as properties of the
-        Tree.
-        """
-        cdef cnp.npy_intp shape[1]
-        shape[0] = <cnp.npy_intp> self.cell_count
-        cdef cnp.npy_intp strides[1]
-        strides[0] = sizeof(Cell)
-        cdef Cell[:] arr
-        Py_INCREF(CELL_DTYPE)
-        arr = PyArray_NewFromDescr(
-            subtype=<PyTypeObject *> np.ndarray,
-            descr=CELL_DTYPE,
-            nd=1,
-            dims=shape,
-            strides=strides,
-            data=<void*> self.cells,
-            flags=cnp.NPY_ARRAY_DEFAULT,
-            obj=None,
-        )
-        Py_INCREF(self)
-        if PyArray_SetBaseObject(arr.base, <PyObject*> self) < 0:
-            raise ValueError("Can't initialize array!")
-        return arr
-
-    cdef int _resize(self, SIZE_t capacity) except -1 nogil:
-        """Resize all inner arrays to `capacity`, if `capacity` == -1, then
-           double the size of the inner arrays.
-
-        Returns -1 in case of failure to allocate memory (and raise MemoryError)
-        or 0 otherwise.
-        """
-        if self._resize_c(capacity) != 0:
-            # Acquire gil only if we need to raise
-            with gil:
-                raise MemoryError()
-
-    cdef int _resize_c(self, SIZE_t capacity=SIZE_MAX) except -1 nogil:
-        """Guts of _resize
-
-        Returns -1 in case of failure to allocate memory (and raise MemoryError)
-        or 0 otherwise.
-        """
-        if capacity == self.capacity and self.cells != NULL:
-            return 0
-
-        if <size_t> capacity == SIZE_MAX:
-            if self.capacity == 0:
-                capacity = 9  # default initial value to min
-            else:
-                capacity = 2 * self.capacity
-
-        safe_realloc(&self.cells, capacity)
-
-        # if capacity smaller than cell_count, adjust the counter
-        if capacity < self.cell_count:
-            self.cell_count = capacity
-
-        self.capacity = capacity
-        return 0
-
     def _py_summarize(self, DTYPE_t[:] query_pt, DTYPE_t[:, :] X, float angle):
         # Used for testing summarize
         cdef:
@@ -1462,7 +1387,7 @@ cdef double exact_compute_gradient(float[:] timings,
                             np.int64_t[:] neighbors,
                             np.int64_t[:] indptr,
                             double[:, :] tot_force,
-                            _QuadTree qt,
+                            _OcTree qt,
                             float theta,
                             int dof,
                             long start,
@@ -1519,7 +1444,7 @@ cdef double exact_compute_gradient_negative(double[:, :] pos_reference,
                                       np.int64_t[:] neighbors,
                                       np.int64_t[:] indptr,
                                       double* neg_f,
-                                      _QuadTree qt,
+                                      _OcTree qt,
                                       int dof,
                                       float theta,
                                       long start,
@@ -1576,7 +1501,7 @@ cdef double compute_gradient(float[:] timings,
                             np.int64_t[:] neighbors,
                             np.int64_t[:] indptr,
                             double[:, :] tot_force,
-                            _QuadTree qt,
+                            _OcTree qt,
                             float theta,
                             int dof,
                             long start,
@@ -1676,14 +1601,14 @@ cdef double compute_gradient_positive(double[:] val_P,
                 # only compute the error when needed
                 if compute_error:
                     qij = qij / sum_Q
-                    C += pij * log(max(pij, DTYPE_tINY) / max(qij, DTYPE_tINY))
+                    C += pij * log(max(pij, FLOAT32_TINY) / max(qij, FLOAT32_TINY))
                 for ax in range(n_dimensions):
                     pos_f[i * n_dimensions + ax] += mult * distance_grad(pos_reference[i, 0], pos_reference[i, 1], pos_reference[j, 0], pos_reference[j, 1], ax)
     return C
 
 cdef double compute_gradient_negative(double[:, :] pos_reference,
                                       double* neg_f,
-                                      _QuadTree qt,
+                                      _OcTree qt,
                                       int dof,
                                       float theta,
                                       long start,
@@ -1734,7 +1659,7 @@ cdef double compute_gradient_negative(double[:, :] pos_reference,
             # for the digits dataset, walking the tree
             # is about 10-15x more expensive than the
             # following for loop
-            for j in range(idx // offset):
+            for j in range(idx // offset): # TODO: Maybe here I have to modify?
 
                 dist2s = summary[j * offset + n_dimensions]
                 size = summary[j * offset + n_dimensions + 1]
@@ -1793,7 +1718,7 @@ def gradient(float[:] timings,
              bint grad_fix=0):
     cdef double C
     cdef int n
-    cdef _QuadTree qt = _QuadTree(pos_output.shape[1], verbose)
+    cdef _OcTree qt = _OcTree(pos_output.shape[1], verbose)
     cdef clock_t t1 = 0, t2 = 0
 
     global AREA_SPLIT
