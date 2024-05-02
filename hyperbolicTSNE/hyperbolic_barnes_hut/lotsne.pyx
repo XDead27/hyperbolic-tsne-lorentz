@@ -148,7 +148,7 @@ cdef DTYPE_t sq_norm(DTYPE_t x, DTYPE_t y, DTYPE_t z) nogil:
 #     return c / (1 + sqrt(1 - sq_n))
 
 cdef DTYPE_t lorentz_to_klein(DTYPE_t c, DTYPE_t sq_n) nogil:
-    return 0 # TODO
+    return 0 # TODO is it even necessary
 
 cdef DTYPE_t klein_to_lorentz(DTYPE_t c, DTYPE_t sq_n) nogil:
     return 0 # TODO
@@ -158,6 +158,10 @@ cdef DTYPE_t lorentz_factor(DTYPE_t sq_n) nogil:
 
 cdef DTYPE_t euclidean_mean(DTYPE_t fst, DTYPE_t snd) nogil:
     return (fst + snd) / 2
+
+# TODO: Create distance function for the hyperboloid model
+
+# TODO: Create method get_max_for_hyperboloid_section
 
 # cdef DTYPE_t[3] mid_point(DTYPE_t[3] min_v, DTYPE_t[3] max_v) nogil:
 #     return [euclidean_mean(min_v[0], max_v[0]), 
@@ -216,41 +220,6 @@ cdef class _OcTree:
         def __get__(self):
             return self._get_cell_ndarray()['is_leaf'][:self.cell_count]
 
-    def init_py(self, X):
-        """Build a tree from an array of points X."""
-        cdef:
-            int i
-            DTYPE_t[3] pt
-            DTYPE_t[3] min_bounds, max_bounds
-
-        # validate X and prepare for query
-        # X = check_array(X, dtype=DTYPE_t, order='C')
-        n_samples = X.shape[0]
-
-        capacity = 100
-        self._resize(capacity)
-        m = np.min(X, axis=0)
-        M = np.max(X, axis=0)
-        # Scale the maximum to get all points strictly in the tree bounding box
-        # The 3 bounds are for positive, negative and small values
-        M = np.maximum(M * (1. + 1e-3 * np.sign(M)), M + 1e-3)
-        for i in range(self.n_dimensions):
-            min_bounds[i] = m[i]
-            max_bounds[i] = M[i]
-
-            if self.verbose > 10:
-                printf("[OcTree] bounding box axis %i : [%f, %f]\n",
-                       i, min_bounds[i], max_bounds[i])
-
-        # Create the initial node with boundaries from the dataset
-        self._init_root(min_bounds, max_bounds)
-
-        # # Insert all points
-        # for i in range(n_samples):
-        #     for j in range(self.n_dimensions):
-        #         pt[j] = X[i, j]
-        #     self.insert_point(pt, i)
-
     def build_tree(self, X):
         """Build a tree from an array of points X."""
         cdef:
@@ -284,6 +253,9 @@ cdef class _OcTree:
         for i in range(n_samples):
             for j in range(self.n_dimensions):
                 pt[j] = X[i, j]
+
+            # TODO: Change points from Poincare to Lorentz
+
             self.insert_point(pt, i)
 
         # Shrink the cells array to reduce memory usage
@@ -402,6 +374,10 @@ cdef class _OcTree:
             width = child.max_bounds[i] - child.min_bounds[i]
 
             child.barycenter[i] = point[i]
+
+            # TODO: Add Lorentz factor calculation by converting to klein model (or maybe some faster way?)
+
+            # TODO: Change width metric to use bounds on the hyperboloid
             child.squared_max_width = max(child.squared_max_width, width*width)
 
         # Store the point info and the size to account for duplicated points
@@ -484,6 +460,8 @@ cdef class _OcTree:
             root.max_bounds[i] = max_bounds[i]
             root.center[i] = (max_bounds[i] + min_bounds[i]) / 2.
             width = max_bounds[i] - min_bounds[i]
+
+            # TODO: Change metric to use bounds on the hyperboloid
             root.squared_max_width = max(root.squared_max_width, width*width)
         root.cell_id = 0
 
@@ -535,6 +513,15 @@ cdef class _OcTree:
             bint duplicate = True
             Cell* cell = &self.cells[cell_id]
 
+        # TODO: Either
+        # (1) Change signature to receive Poincare point, then, for 
+        #     each point in the tree, translate to Poincare model and
+        #     use distance_grad() (easy, not clean)
+        # (2) Preserve signature, change both the argument point and all
+        #     the ones contained in the tree to Poincare model and use
+        #     distance_grad() (cleaner, but has to respect other constraints)
+        # (3) (NON-PRIORITY) Preserve signature and use hyperboloid 
+        #     gradient and distance methods to summarize (cleaneast, hardest)
         results[idx_d] = 0.
         for i in range(self.n_dimensions):
             results[idx + i] = point[i] - cell.barycenter[i]
@@ -726,15 +713,18 @@ cdef class _OcTree:
 #################################################
 # Dist and Dist Grad functions
 #################################################
+# NON-PRIORITY TODO: Change these to the Lorentz model distance and gradient
 cdef double distance_q(DTYPE_t* u, DTYPE_t* v) nogil:
     return distance(u[0], u[1], v[0], v[1])
 
 cdef double dot_q(DTYPE_t* u, DTYPE_t* v) nogil:
     return u[0] * v[0] + u[1] * v[1]
 
+# Distance gradient on the poincare model (takes two pointers as arguments)
 cdef double distance_grad_q(DTYPE_t* u, DTYPE_t* v, int ax) nogil:
     return distance_grad(u[0], u[1], v[0], v[1], ax)
 
+# Pointwise distance on the poincare model
 cpdef double distance(double u0, double u1, double v0, double v1) nogil:
     if fabs(u0 - v0) <= EPSILON and fabs(u1 - v1) <= EPSILON:
         return 0.
@@ -749,6 +739,7 @@ cpdef double distance(double u0, double u1, double v0, double v1) nogil:
 
     return result
 
+# Distance gradient on the poincare model
 cdef double distance_grad(double u0, double u1, double v0, double v1, int ax) nogil:
     if fabs(u0 - v0) <= EPSILON and fabs(u1 - v1) <= EPSILON:
         return 0.
@@ -1162,7 +1153,7 @@ cdef double compute_gradient_negative(double[:, :] pos_reference,
             # for the digits dataset, walking the tree
             # is about 10-15x more expensive than the
             # following for loop
-            for j in range(idx // offset): # TODO: Maybe here I have to modify?
+            for j in range(idx // offset):
 
                 dist2s = summary[j * offset + n_dimensions]
                 size = summary[j * offset + n_dimensions + 1]
@@ -1234,7 +1225,7 @@ def gradient(float[:] timings,
         if TAKE_TIMING:
             t1 = clock()
 
-        qt.build_tree(pos_output) # TODO: change from Poincare to Lorentz data (how?)
+        qt.build_tree(pos_output)
 
         if TAKE_TIMING:
             t2 = clock()
