@@ -30,8 +30,9 @@ cdef float FLOAT64_EPS = np.finfo(np.float64).eps
 cdef double EPSILON = 1e-5
 cdef double MAX_TANH = 15.0
 cdef double BOUNDARY = 1 - EPSILON
-cdef int RANGE = 0
-cdef int ANGLE = 1
+cdef int LORENTZ_T = 0
+cdef int LORENTZ_X_1 = 1
+cdef int LORENTZ_X_2 = 2
 cdef double MACHINE_EPSILON = np.finfo(np.double).eps
 cdef int TAKE_TIMING = 1
 cdef int AREA_SPLIT = 0
@@ -69,7 +70,7 @@ cdef struct Cell:
     # Internal constants
     DTYPE_t[3] center          # Store the center for quick split of cells
     DTYPE_t[3] barycenter      # Keep track of the center of mass of the cell
-    DTYPE_t lorentz_factor_sum      # TODO
+    DTYPE_t lorentz_factor_sum
 
     # Cell boundaries
     DTYPE_t[3] min_bounds      # Inferior boundaries of this cell (inclusive)
@@ -147,11 +148,24 @@ cdef DTYPE_t sq_norm(DTYPE_t x, DTYPE_t y, DTYPE_t z) nogil:
 # cdef DTYPE_t klein_to_poincare(DTYPE_t c, DTYPE_t sq_n) nogil:
 #     return c / (1 + sqrt(1 - sq_n))
 
-cdef DTYPE_t lorentz_to_klein(DTYPE_t c, DTYPE_t sq_n) nogil:
-    return 0 # TODO is it even necessary
+cdef void poincare_to_lorentz(DTYPE_t y1, DTYPE_t y2, DTYPE_t* result) nogil:
+    cdef:
+        double term = 1 - y1 * y1 - y2 * y2
 
-cdef DTYPE_t klein_to_lorentz(DTYPE_t c, DTYPE_t sq_n) nogil:
-    return 0 # TODO
+    result[LORENTZ_T] = 2 / term - 1
+    result[LORENTZ_X_1] = 2 * y1 / term
+    result[LORENTZ_X_2] = 2 * y2 / term
+
+cdef void lorentz_to_poincare(DTYPE_t* lp, DTYPE_t* result) nogil:
+    result[0] = lp[LORENTZ_X_1] / (1 + lp[LORENTZ_T])
+    result[1] = lp[LORENTZ_X_2] / (1 + lp[LORENTZ_T])
+
+cdef void lorentz_to_klein(DTYPE_t* lp, DTYPE_t* result) nogil:
+    result[0] = lp[LORENTZ_X_1] / lp[LORENTZ_T]
+    result[1] = lp[LORENTZ_X_2] / lp[LORENTZ_T]
+
+cdef void klein_to_lorentz(DTYPE_t* z, DTYPE_t* result) nogil:
+    result = result # TODO
 
 cdef DTYPE_t lorentz_factor(DTYPE_t sq_n) nogil:
     return 1 / sqrt(1 - sq_n)
@@ -159,9 +173,16 @@ cdef DTYPE_t lorentz_factor(DTYPE_t sq_n) nogil:
 cdef DTYPE_t euclidean_mean(DTYPE_t fst, DTYPE_t snd) nogil:
     return (fst + snd) / 2
 
-# TODO: Create distance function for the hyperboloid model
+cdef DTYPE_t minkowski_bilinear(DTYPE_t* lp1, DTYPE_t* lp2) nogil:
+    return (lp1[1] * lp2[1] + lp1[2] * lp2[2] - lp1[0] * lp2[0])
+
+# Distance function for the hyperboloid model
+cdef DTYPE_t distance_lorentz(DTYPE_t* lp1, DTYPE_t* lp2) nogil:
+    return acosh( - minkowski_bilinear(lp1, lp2))
 
 # TODO: Create method get_max_for_hyperboloid_section
+cdef DTYPE_t get_max_dist_hyperboloid_sect(DTYPE_t* la, DTYPE_t* lb) nogil:
+    return 0
 
 # cdef DTYPE_t[3] mid_point(DTYPE_t[3] min_v, DTYPE_t[3] max_v) nogil:
 #     return [euclidean_mean(min_v[0], max_v[0]), 
@@ -251,17 +272,14 @@ cdef class _OcTree:
 
         # Insert all points
         for i in range(n_samples):
-            for j in range(self.n_dimensions):
-                pt[j] = X[i, j]
-
-            # TODO: Change points from Poincare to Lorentz
+            # Change points from Poincare to Lorentz
+            poincare_to_lorentz(X[i, 0], X[i, 1], pt)
 
             self.insert_point(pt, i)
 
         # Shrink the cells array to reduce memory usage
         self._resize(capacity=self.cell_count)
     
-    # TODO: Modify with Lorentz metric
     cdef int insert_point(self, DTYPE_t[3] point, SIZE_t point_index,
                       SIZE_t cell_id=0) except -1 nogil:
         """Insert a point in the QuadTree."""
@@ -269,8 +287,13 @@ cdef class _OcTree:
         cdef SIZE_t selected_child
         cdef Cell* cell = &self.cells[cell_id]
         cdef SIZE_t n_point = cell.cumulative_size
+        cdef DTYPE_t[2] klein_point
+        cdef DTYPE_t[2] klein_barycenter
+        cdef DTYPE_t temp_norm
+        cdef DTYPE_t temp_lorentz
 
         if self.verbose > 10:
+            printf("[OcTree] POINT_IDX %li\n", point_index)
             printf("[OcTree] Inserting depth %li\n", cell.depth)
 
         # If the cell is an empty leaf, insert the point in it
@@ -288,10 +311,22 @@ cdef class _OcTree:
         # If the cell is not a leaf, update cell internals and
         # recurse in selected child
         if not cell.is_leaf:
-            for ax in range(self.n_dimensions):
-                # barycenter update using a weighted mean
-                cell.barycenter[ax] = (
-                    n_point * cell.barycenter[ax] + point[ax]) / (n_point + 1)
+            # Recompute barycenter of cell
+            lorentz_to_klein(point, klein_point)
+
+            temp_norm = sq_norm(klein_point[0],
+                                klein_point[1],
+                                0)
+            temp_lorentz = lorentz_factor(temp_norm)
+
+            lorentz_to_klein(cell.barycenter, klein_barycenter)
+
+            klein_barycenter[0] = ((klein_barycenter[0] * cell.lorentz_factor_sum) + temp_lorentz * klein_point[0]) / (cell.lorentz_factor_sum + temp_lorentz)
+            klein_barycenter[1] = ((klein_barycenter[1] * cell.lorentz_factor_sum) + temp_lorentz * klein_point[1]) / (cell.lorentz_factor_sum + temp_lorentz)
+
+            klein_to_lorentz(klein_barycenter, cell.barycenter)
+
+            cell.lorentz_factor_sum = cell.lorentz_factor_sum + temp_lorentz
 
             # Increase the size of the subtree starting from this cell
             cell.cumulative_size += 1
@@ -315,6 +350,9 @@ cdef class _OcTree:
             self.n_points += 1
             return cell_id
 
+        if self.verbose > 49:
+            printf("[OcTree] Inserting %li in leaf!\n", point_index)
+
         # In a leaf, the barycenter correspond to the only point included
         # in it.
         self._insert_point_in_new_child(cell.barycenter, cell, cell.point_index,
@@ -334,6 +372,8 @@ cdef class _OcTree:
             DTYPE_t width
             Cell* child
             int i
+            DTYPE_t[2] klein_barycenter
+            double temp_norm
 
         # If the maximal capacity of the Tree have been reached, double the capacity
         # We need to save the current cell id and the current point to retrieve them
@@ -371,14 +411,17 @@ cdef class _OcTree:
                 child.min_bounds[i] = cell.min_bounds[i]
                 child.max_bounds[i] = cell.center[i]
             child.center[i] = (child.min_bounds[i] + child.max_bounds[i]) / 2.
-            width = child.max_bounds[i] - child.min_bounds[i]
 
             child.barycenter[i] = point[i]
 
-            # TODO: Add Lorentz factor calculation by converting to klein model (or maybe some faster way?)
+        # Compute lorentz factor sum (TODO get rid of it)
+        lorentz_to_klein(child.barycenter, klein_barycenter)
+        temp_norm = sq_norm(klein_barycenter[0], klein_barycenter[1], 0)
+        child.lorentz_factor_sum = lorentz_factor(temp_norm)
 
-            # TODO: Change width metric to use bounds on the hyperboloid
-            child.squared_max_width = max(child.squared_max_width, width*width)
+        # Compute the maximum squared distance by intersecting with hyperboloid
+        width = get_max_dist_hyperboloid_sect(child.min_bounds, child.max_bounds)
+        child.squared_max_width = width * width
 
         # Store the point info and the size to account for duplicated points
         child.point_index = point_index
@@ -392,26 +435,6 @@ cdef class _OcTree:
                    point_index, cell_id)
 
         return cell_id
-
-        # Finally, if the cell is a leaf with a point already inserted,
-        # split the cell in n_cells_per_cell if the point is not a duplicate.
-        # If it is a duplicate, increase the size of the leaf and return.
-        if self._is_duplicate(point, cell.barycenter):
-            if self.verbose > 10:
-                printf("[OcTree] found a duplicate!\n")
-            cell.cumulative_size += 1
-            self.n_points += 1
-            return cell_id
-
-        # In a leaf, the barycenter correspond to the only point included
-        # in it.
-        poincare_point[RANGE] = sqrt(cell.barycenter[0] ** 2 + cell.barycenter[1] ** 2)
-        poincare_point[ANGLE] = atan2(cell.barycenter[1], cell.barycenter[0])
-
-        poincare_point[ANGLE] = poincare_point[ANGLE] if poincare_point[ANGLE] > 0 else poincare_point[ANGLE] + 2 * M_PI
-        self._insert_point_in_new_child(poincare_point, cell, cell.point_index,
-                                        cell.cumulative_size)
-        return self.insert_point(point, point_index, cell_id)
 
     cdef bint _is_duplicate(self, DTYPE_t[3] point1, DTYPE_t[3] point2) noexcept nogil:
         """Check if the two given points are equals."""
@@ -459,15 +482,16 @@ cdef class _OcTree:
             root.min_bounds[i] = min_bounds[i]
             root.max_bounds[i] = max_bounds[i]
             root.center[i] = (max_bounds[i] + min_bounds[i]) / 2.
-            width = max_bounds[i] - min_bounds[i]
 
-            # TODO: Change metric to use bounds on the hyperboloid
-            root.squared_max_width = max(root.squared_max_width, width*width)
+        # Compute maximum squared distance of the root by intersecting with the hyperboloid
+        width = get_max_dist_hyperboloid_sect(root.min_bounds, root.max_bounds)
+        root.squared_max_width = max(root.squared_max_width, width*width)
+
         root.cell_id = 0
 
         self.cell_count += 1
 
-    cdef long summarize(self, DTYPE_t[3] point, DTYPE_t* results,
+    cdef long summarize(self, DTYPE_t[2] point, DTYPE_t* results,
                         float squared_theta=.5, SIZE_t cell_id=0, long idx=0
                         ) noexcept nogil:
         """Summarize the tree compared to a query point.
@@ -511,22 +535,29 @@ cdef class _OcTree:
         cdef:
             int i, idx_d = idx + self.n_dimensions
             bint duplicate = True
+            double dist
             Cell* cell = &self.cells[cell_id]
+            DTYPE_t[2] poincare_barycenter
 
         # TODO: Either
         # (1) Change signature to receive Poincare point, then, for 
         #     each point in the tree, translate to Poincare model and
-        #     use distance_grad() (easy, not clean)
+        #     use distance_grad() (easy, not clean) (CHOSEN)
         # (2) Preserve signature, change both the argument point and all
         #     the ones contained in the tree to Poincare model and use
         #     distance_grad() (cleaner, but has to respect other constraints)
         # (3) (NON-PRIORITY) Preserve signature and use hyperboloid 
         #     gradient and distance methods to summarize (cleaneast, hardest)
+        
+        lorentz_to_poincare(cell.barycenter, poincare_barycenter)
+
         results[idx_d] = 0.
         for i in range(self.n_dimensions):
-            results[idx + i] = point[i] - cell.barycenter[i]
-            results[idx_d] += results[idx + i] * results[idx + i]
+            results[idx + i] = distance_grad_q(point, poincare_barycenter, i)
             duplicate &= fabs(results[idx + i]) <= EPSILON
+
+        dist = distance_q(point, poincare_barycenter)
+        results[idx_d] = dist * dist
 
         # Do not compute self interactions
         if duplicate and cell.is_leaf:
@@ -1212,7 +1243,7 @@ def gradient(float[:] timings,
              bint grad_fix=0):
     cdef double C
     cdef int n
-    cdef _OcTree qt = _OcTree(pos_output.shape[1], verbose)
+    cdef _OcTree qt = _OcTree(pos_output.shape[1], 100)
     cdef clock_t t1 = 0, t2 = 0
 
     global AREA_SPLIT

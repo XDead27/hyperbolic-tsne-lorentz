@@ -22,7 +22,7 @@ MACHINE_EPSILON = np.finfo(np.double).eps
 
 def log_iteration(logging_dict, logging_key, it, y, n_samples, n_components,
                   cf=None, cf_params=None, cf_val=None, grad=None, grad_norm=None, log_arrays=False,
-                  log_arrays_ids=None):
+                  log_arrays_ids=None, hyperbolic_model="poincare"):
     """
     Log information about an optimization iteration.
 
@@ -61,7 +61,7 @@ def log_iteration(logging_dict, logging_key, it, y, n_samples, n_components,
     """
     if cf_val is None and grad is None:
         if cf is not None and cf_params is not None:
-            cf_val, grad = cf.obj_grad(y, **cf_params)
+            cf_val, grad = cf.obj_grad(hyperbolic_model, y, **cf_params)
         else:
             print("No cost function class provided, cf and grad not computed")
 
@@ -99,7 +99,7 @@ def gradient_descent(
         threshold_cf=0., threshold_its=-1, threshold_check_size=-1.,
         momentum=0.8, learning_rate=200.0, min_gain=0.01, vanilla=False, min_grad_norm=1e-7, error_tol=1e-9, size_tol=None,
         verbose=0, rescale=None, n_iter_rescale=np.inf, gradient_mask=np.ones, grad_scale_fix=False,
-        logging_dict=None, logging_key=None,
+        logging_dict=None, logging_key=None, hyperbolic_model="poincare"
 ):
     """Batch gradient descent with momentum and individual gains.
     Parameters
@@ -167,6 +167,8 @@ def gradient_descent(
         A dictionary to store results obtained by the solver.
     logging_key : String, optional (default: None)
         A prefix to prepend to the results in the logging_dict.
+    hyperbolic_model " String, required (default: "poincare")
+        The type of model to be used. Currently supports "poincare" and "lorentz"
     Returns
     -------
     p : array, shape (n_params,)
@@ -243,7 +245,7 @@ def gradient_descent(
         compute_error = check_convergence or check_threshold or i == n_iter - 1
 
         if compute_error or logging:  # TODO: add different levels of logging to avoid bottlenecks
-            error, grad = cf.obj_grad(y, **cf_params)
+            error, grad = cf.obj_grad(hyperbolic_model, y, **cf_params)
 
             if isinstance(cf, HyperbolicKL):
                 # New Fix
@@ -256,7 +258,7 @@ def gradient_descent(
             else:
                 grad_norm = linalg.norm(grad)
         else:
-            grad = cf.grad(y, **cf_params)
+            grad = cf.grad(hyperbolic_model, y, **cf_params)
             grad_norm = linalg.norm(grad)
 
         # Perform the actual gradient descent step
@@ -336,7 +338,7 @@ def gradient_descent(
             # if not isinstance(cf, HyperbolicKL) or i % 50 == 0 or i == total_its - 1:
             log_iteration(logging_dict, logging_key, i, y, n_samples, n_components,
                           cf_val=error, grad=grad, grad_norm=grad_norm,
-                          log_arrays=log_arrays, log_arrays_ids=log_arrays_ids)
+                          log_arrays=log_arrays, log_arrays_ids=log_arrays_ids, hyperbolic_model=hyperbolic_model)
             tic_l = toc_l
         # End:logging
 
@@ -354,7 +356,7 @@ def gradient_descent(
                     y_check_size = y.copy()
                     y_check_size /= current_embedding_size
                     y_check_size *= threshold_check_size
-                    error_rescaled = cf.obj(y_check_size, **cf_params)
+                    error_rescaled = cf.obj(hyperbolic_model, y_check_size, **cf_params)
                     logging_dict[logging_key]["cfs_rescaled"].append(
                         error_rescaled)
                     # If the error is smaller than the given threshold, ...
@@ -384,7 +386,7 @@ def gradient_descent(
                         y_its = y.copy()
                         y_its /= current_embedding_size
                         y_its *= threshold_check_size
-                        error_rescaled = cf.obj(y_its, **cf_params)
+                        error_rescaled = cf.obj(hyperbolic_model, y_its, **cf_params)
                         logging_dict[logging_key]["threshold_its_rescaled_its"] = i - start_it
                         logging_dict[logging_key]["threshold_its_rescaled_embedding"] = y_its.reshape(
                             n_samples, n_components)
@@ -406,7 +408,7 @@ def gradient_descent(
                     y_cf = y.copy()
                     y_cf /= current_embedding_size
                     y_cf *= threshold_check_size
-                    error_rescaled = cf.obj(y_cf, **cf_params)
+                    error_rescaled = cf.obj(hyperbolic_model, y_cf, **cf_params)
                     logging_dict[logging_key]["threshold_cf_rescaled_its"] = i - start_it
                     logging_dict[logging_key]["threshold_cf_rescaled_embedding"] = y_cf.reshape(
                         n_samples, n_components)

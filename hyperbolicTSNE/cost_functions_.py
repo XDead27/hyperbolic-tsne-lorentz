@@ -12,6 +12,7 @@ import numpy as np
 from sklearn.utils._openmp_helpers import _openmp_effective_n_threads
 
 from hyperbolicTSNE.hyperbolic_barnes_hut.tsne import gradient
+from hyperbolicTSNE.hyperbolic_barnes_hut.lotsne import gradient as gradient_lorentz
 
 MACHINE_EPSILON = np.finfo(np.double).eps
 
@@ -137,7 +138,7 @@ class HyperbolicKL:
     # User-facing functions #
     #########################
 
-    def obj(self, Y, *, V):
+    def obj(self, model, Y, *, V):
         """Calculates the Hyperbolic KL Divergence of a given embedding.
 
         Parameters
@@ -156,10 +157,10 @@ class HyperbolicKL:
         if self.params["method"] == "exact":
             raise NotImplementedError("Exact obj not implemented. Use obj_grad to get exact cost function value.")
         elif self.params["method"] == "barnes-hut":
-            obj, _ = self._obj_bh(Y, V, n_samples)
+            obj, _ = self._obj_bh(model, Y, V, n_samples)
             return obj
 
-    def grad(self, Y, *, V):
+    def grad(self, model, Y, *, V):
         """Calculates the gradient of the Hyperbolic KL Divergence of 
         a given embedding.
 
@@ -177,12 +178,12 @@ class HyperbolicKL:
         """
         n_samples = V.shape[0]
         if self.params["method"] == "exact":
-            return self._grad_exact(Y, V, n_samples)
+            return self._grad_exact(model, Y, V, n_samples)
         elif self.params["method"] == "barnes-hut":
-            _, grad = self._grad_bh(Y, V, n_samples)
+            _, grad = self._grad_bh(model, Y, V, n_samples)
             return grad
 
-    def obj_grad(self, Y, *, V):
+    def obj_grad(self, model, Y, *, V):
         """Calculates the Hyperbolic KL Divergence and its gradient 
         of a given embedding.
 
@@ -202,10 +203,10 @@ class HyperbolicKL:
         """
         n_samples = V.shape[0]
         if self.params["method"] == "exact":
-            obj, grad = self._grad_exact(Y, V, n_samples)
+            obj, grad = self._grad_exact(model, Y, V, n_samples)
             return obj, grad
         elif self.params["method"] == "barnes-hut":
-            obj, grad = self._obj_bh(Y, V, n_samples)
+            obj, grad = self._obj_bh(model, Y, V, n_samples)
             return obj, grad
 
     ##########################
@@ -226,7 +227,7 @@ class HyperbolicKL:
         """
         pass
 
-    def _grad_exact(self, Y, V, n_samples, save_timings=True):
+    def _grad_exact(self, model, Y, V, n_samples, save_timings=True):
         """Exact computation of the KL Divergence gradient.
 
         Parameters
@@ -254,18 +255,36 @@ class HyperbolicKL:
 
         grad = np.zeros(Y.shape, dtype=ctypes.c_double)
         timings = np.zeros(4, dtype=ctypes.c_float)
-        error = gradient(
-            timings,
-            val_V, Y, neighbors, indptr, grad,
-            0.5,
-            self.n_components,
-            self.params["params"]["verbose"],
-            dof=self.params["params"]["degrees_of_freedom"],
-            compute_error=True,
-            num_threads=self.params["params"]["num_threads"],
-            exact=True,
-            grad_fix=self.params["params"]["grad_fix"]
-        )
+
+        if model == "lorentz":
+            error = gradient_lorentz(
+                timings,
+                val_V, Y, neighbors, indptr, grad,
+                0.5,
+                self.n_components,
+                self.params["params"]["verbose"],
+                dof=self.params["params"]["degrees_of_freedom"],
+                compute_error=True,
+                num_threads=self.params["params"]["num_threads"],
+                exact=True,
+                grad_fix=self.params["params"]["grad_fix"]
+            )
+        elif model == "poincare":
+            error = gradient(
+                timings,
+                val_V, Y, neighbors, indptr, grad,
+                0.5,
+                self.n_components,
+                self.params["params"]["verbose"],
+                dof=self.params["params"]["degrees_of_freedom"],
+                compute_error=True,
+                num_threads=self.params["params"]["num_threads"],
+                exact=True,
+                grad_fix=self.params["params"]["grad_fix"]
+            )
+        else:
+            raise RuntimeError("Model " + model + " does not exist!")
+
 
         grad = grad.ravel()
         grad *= 4
@@ -275,7 +294,7 @@ class HyperbolicKL:
 
         return error, grad
 
-    def _obj_bh(self, Y, V, n_samples):
+    def _obj_bh(self, model, Y, V, n_samples):
         """Approximate computation of the KL Divergence.
 
         Parameters
@@ -294,9 +313,9 @@ class HyperbolicKL:
         ndarray
             Array (n_samples x n_components) with KL Divergence gradient values.
         """
-        return self._grad_bh(Y, V, n_samples)
+        return self._grad_bh(model, Y, V, n_samples)
 
-    def _grad_bh(self, Y, V, n_samples, save_timings=True):
+    def _grad_bh(self, model, Y, V, n_samples, save_timings=True):
         """Approximate computation of the KL Divergence gradient.
 
         Parameters
@@ -324,19 +343,37 @@ class HyperbolicKL:
 
         grad = np.zeros(Y.shape, dtype=ctypes.c_double)
         timings = np.zeros(4, dtype=ctypes.c_float)
-        error = gradient(
-            timings,
-            val_V, Y, neighbors, indptr, grad,
-            self.params["params"]["angle"],
-            self.n_components,
-            self.params["params"]["verbose"],
-            dof=self.params["params"]["degrees_of_freedom"],
-            compute_error=True,
-            num_threads=self.params["params"]["num_threads"],
-            exact=False,
-            area_split=self.params["params"]["area_split"],
-            grad_fix=self.params["params"]["grad_fix"]
-        )
+        
+        if model == "lorentz":
+            error = gradient_lorentz(
+                timings,
+                val_V, Y, neighbors, indptr, grad,
+                self.params["params"]["angle"],
+                self.n_components,
+                self.params["params"]["verbose"],
+                dof=self.params["params"]["degrees_of_freedom"],
+                compute_error=True,
+                num_threads=self.params["params"]["num_threads"],
+                exact=False,
+                area_split=self.params["params"]["area_split"],
+                grad_fix=self.params["params"]["grad_fix"]
+            )
+        elif model == "poincare":
+            error = gradient(
+                timings,
+                val_V, Y, neighbors, indptr, grad,
+                self.params["params"]["angle"],
+                self.n_components,
+                self.params["params"]["verbose"],
+                dof=self.params["params"]["degrees_of_freedom"],
+                compute_error=True,
+                num_threads=self.params["params"]["num_threads"],
+                exact=False,
+                area_split=self.params["params"]["area_split"],
+                grad_fix=self.params["params"]["grad_fix"]
+            )
+        else:
+            raise RuntimeError("Model " + model + " does not exist!")
 
         grad = grad.ravel()
         grad *= 4

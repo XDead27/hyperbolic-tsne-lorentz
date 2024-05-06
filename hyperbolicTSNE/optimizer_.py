@@ -226,7 +226,7 @@ class SequentialOptimizer:
     def sequence_poincare(cls, exaggeration_its=250, exaggeration=12, gradientDescent_its=750,
                           n_iter_check=np.inf, threshold_cf=0., threshold_its=-1, threshold_check_size=-1, size_tol=None,
                           learning_rate_ex=0.1, learning_rate_main=0.1, momentum_ex=0.5, momentum=0.8, vanilla=False, exact=True, calc_both=False, angle=0.5,
-                          area_split=False, grad_fix=False, grad_scale_fix=False):
+                          area_split=False, grad_fix=False, grad_scale_fix=False, hyperbolic_model="poincare"):
         # Start with an empty sequence
         cf_config_params = HyperbolicKL.exact_tsne() if exact else HyperbolicKL.bh_tsne()
         cf_config_params["params"]["calc_both"] = calc_both
@@ -242,7 +242,8 @@ class SequentialOptimizer:
         template["sequence"] = SequentialOptimizer.add_block_early_exaggeration(
             template["sequence"], earlyExaggeration_its=exaggeration_its, momentum=momentum_ex, learning_rate=learning_rate_ex,
             exaggeration=exaggeration, n_iter_check=n_iter_check,
-            threshold_cf=threshold_cf, threshold_its=threshold_its, threshold_check_size=threshold_check_size, grad_scale_fix=grad_scale_fix
+            threshold_cf=threshold_cf, threshold_its=threshold_its, threshold_check_size=threshold_check_size, grad_scale_fix=grad_scale_fix,
+            hyperbolic_model=hyperbolic_model
         )
 
         template["sequence"][-2]["params"]["vanilla"] = vanilla
@@ -261,7 +262,8 @@ class SequentialOptimizer:
         template["sequence"] = SequentialOptimizer.add_block_gradient_descent_with_rescale_and_gradient_mask(
             template["sequence"], gradientDescent_its=gradientDescent_its, n_iter_check=n_iter_check,
             threshold_cf=threshold_cf, threshold_its=threshold_its, threshold_check_size=threshold_check_size,
-            learning_rate=learning_rate_main, momentum=momentum, vanilla=vanilla, grad_scale_fix=grad_scale_fix
+            learning_rate=learning_rate_main, momentum=momentum, vanilla=vanilla, grad_scale_fix=grad_scale_fix,
+            hyperbolic_model=hyperbolic_model
         )
 
         template["sequence"][-1]["params"]["size_tol"] = size_tol        
@@ -272,7 +274,7 @@ class SequentialOptimizer:
     def add_block_early_exaggeration(
             cls, sequence, earlyExaggeration_its, momentum=0.5, learning_rate=200.0, exaggeration=12.0, rescale=None,
             n_iter_rescale=np.inf, gradient_mask=np.ones, n_iter_check=np.inf,
-            threshold_cf=0., threshold_its=-1, threshold_check_size=-1, vanilla=True, grad_scale_fix=False, verbose_solver=0
+            threshold_cf=0., threshold_its=-1, threshold_check_size=-1, vanilla=True, grad_scale_fix=False, verbose_solver=0, hyperbolic_model="poincare"
     ):
         """A block to perform early exaggeration.
         Parameters
@@ -325,7 +327,7 @@ class SequentialOptimizer:
                         "rescale": rescale, "n_iter_rescale": n_iter_rescale, "gradient_mask": gradient_mask,
                         "n_iter_check": n_iter_check, "threshold_cf": threshold_cf, "threshold_its": threshold_its,
                         "threshold_check_size": threshold_check_size, "verbose": verbose_solver, "vanilla": vanilla,
-                        "grad_scale_fix": grad_scale_fix,
+                        "grad_scale_fix": grad_scale_fix, "hyperbolic_model": hyperbolic_model,
                     }
                 })
         sequence.append({
@@ -338,7 +340,7 @@ class SequentialOptimizer:
     def add_block_gradient_descent_with_rescale_and_gradient_mask(
             cls, sequence, gradientDescent_its, momentum=0.8, learning_rate=200.0, rescale=None, n_iter_rescale=np.inf,
             gradient_mask=np.ones, n_iter_check=np.inf, threshold_cf=0, threshold_its=-1, threshold_check_size=-1.,
-            verbose_solver=0, vanilla=False, grad_scale_fix=False,
+            verbose_solver=0, vanilla=False, grad_scale_fix=False, hyperbolic_model="poincare"
     ):
         """A block to perform a specified number of gradient descent steps.
         Parameters
@@ -388,7 +390,7 @@ class SequentialOptimizer:
                         "rescale": rescale, "n_iter_rescale": n_iter_rescale, "gradient_mask": gradient_mask,
                         "n_iter_check": n_iter_check, "threshold_cf": threshold_cf, "threshold_its": threshold_its,
                         "threshold_check_size": threshold_check_size, "verbose": verbose_solver, "vanilla": vanilla,
-                        "grad_scale_fix": grad_scale_fix,
+                        "grad_scale_fix": grad_scale_fix, "hyperbolic_model": hyperbolic_model
                     }
             })
         return sequence
