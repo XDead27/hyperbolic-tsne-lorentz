@@ -30,7 +30,7 @@ cdef float FLOAT64_EPS = np.finfo(np.float64).eps
 cdef double EPSILON = 1e-5
 cdef double MAX_TANH = 15.0
 cdef double BOUNDARY = 1 - EPSILON
-cdef int LORENTZ_T = 0
+cdef int LORENTZ_T = 0 #TODO: flip this to index 2
 cdef int LORENTZ_X_1 = 1
 cdef int LORENTZ_X_2 = 2
 cdef double MACHINE_EPSILON = np.finfo(np.double).eps
@@ -165,7 +165,11 @@ cdef void lorentz_to_klein(DTYPE_t* lp, DTYPE_t* result) nogil:
     result[1] = lp[LORENTZ_X_2] / lp[LORENTZ_T]
 
 cdef void klein_to_lorentz(DTYPE_t* z, DTYPE_t* result) nogil:
-    result = result # TODO
+    cdef double term = sqrt(1 - z[0] * z[0] - z[1] * z[1])
+
+    result[LORENTZ_T] = 1 / term
+    result[LORENTZ_X_1] = z[0] / term
+    result[LORENTZ_X_2] = z[1] / term
 
 cdef DTYPE_t lorentz_factor(DTYPE_t sq_n) nogil:
     return 1 / sqrt(1 - sq_n)
@@ -173,16 +177,118 @@ cdef DTYPE_t lorentz_factor(DTYPE_t sq_n) nogil:
 cdef DTYPE_t euclidean_mean(DTYPE_t fst, DTYPE_t snd) nogil:
     return (fst + snd) / 2
 
-cdef DTYPE_t minkowski_bilinear(DTYPE_t* lp1, DTYPE_t* lp2) nogil:
-    return (lp1[1] * lp2[1] + lp1[2] * lp2[2] - lp1[0] * lp2[0])
+cdef double minkowski_bilinear(DTYPE_t[3] lp1, DTYPE_t[3] lp2) nogil:
+    return (lp1[LORENTZ_X_1] * lp2[LORENTZ_X_1] + lp1[LORENTZ_X_2] * lp2[LORENTZ_X_2] - lp1[LORENTZ_T] * lp2[LORENTZ_T])
 
 # Distance function for the hyperboloid model
-cdef DTYPE_t distance_lorentz(DTYPE_t* lp1, DTYPE_t* lp2) nogil:
+cdef double distance_lorentz(DTYPE_t[3] lp1, DTYPE_t[3] lp2) nogil:
     return acosh( - minkowski_bilinear(lp1, lp2))
 
+# Checks if value lies in the upper polynomial and is in range 0, 1
+cdef bint _check_dist_param_value(double val, DTYPE_t z0, DTYPE_t z_d) nogil:
+    cdef double t = z0 + val * z_d
+
+    return t > 1. and val <= 1. and val >= 0
+
+cdef void _get_point_param(double param, DTYPE_t[3] v_0, DTYPE_t[3] v_d, DTYPE_t* result) nogil:
+    result[LORENTZ_X_1] = v_0[0] + v_d[0] * param
+    result[LORENTZ_X_2] = v_0[1] + v_d[1] * param
+    result[LORENTZ_T] = v_0[2] + v_d[2] * param
+
+# Get intersection between line described by two points and the hyperboloid
+cdef int _get_line_hyperboloid_intersection(DTYPE_t[3] la, DTYPE_t[3] lb, DTYPE_t* res1, DTYPE_t* res2) nogil:
+    cdef:
+        DTYPE_t[3] v_d
+        DTYPE_t[3] v_0
+        double c_a, c_b, c_c, delta, w0, w1
+        int cnt = 0
+    
+    # Setup variables
+    res1 = NULL
+    res2 = NULL
+    v_0[0] = la[LORENTZ_X_1]
+    v_0[1] = la[LORENTZ_X_2]
+    v_0[2] = la[LORENTZ_T]
+    v_d[0] = lb[LORENTZ_X_1] - v_0[0]
+    v_d[1] = lb[LORENTZ_X_2] - v_0[1]
+    v_d[2] = lb[LORENTZ_T] - v_0[2]
+    c_a = v_d[2] * v_d[2] - v_d[0] * v_d[0] - v_d[1] * v_d[1]
+    c_b = 2 * (v_d[2] - v_d[0] - v_d[1])
+    c_c = v_0[2] * v_0[2] - v_0[0] * v_0[0] - v_0[1] * v_0[1] - 1
+    delta = c_b * c_b - 4 * c_a * c_c
+    
+    # Get intersection points with hyperboloid
+    if delta < 0:
+        return 0
+
+    x0 = (sqrt(delta) - c_b) / (2 * c_a)
+    x1 = (- sqrt(delta) - c_b) / (2 * c_a)
+
+    # Select only those which lie on the segment of the cube
+    if _check_dist_param_value(x0, v_0[2], v_d[2]):
+        _get_point_param(x0, v_0, v_d, res1)
+        cnt += 1
+
+    if _check_dist_param_value(x1, v_0[2], v_d[2]):
+        _get_point_param(x1, v_0, v_d, res2)
+        cnt += 1
+
+    return cnt
+
+# Copy point 
+cdef void _copy_point(DTYPE_t[3] p, DTYPE_t* res) nogil:
+    res[0] = p[0]
+    res[1] = p[1]
+    res[2] = p[2]
+
 # TODO: Create method get_max_for_hyperboloid_section
-cdef DTYPE_t get_max_dist_hyperboloid_sect(DTYPE_t* la, DTYPE_t* lb) nogil:
-    return 0
+cdef DTYPE_t get_max_dist_hyperboloid_sect(DTYPE_t[3] la, DTYPE_t[3] lb) nogil:
+    cdef DTYPE_t[8][3] points
+    cdef DTYPE_t[24][3] intersect
+    cdef double max_dist = 0.0, dist
+
+    # Setup points (too lazy to think of algorithm)
+    _copy_point(la, points[0]) # min bound
+    _copy_point(la, points[1])
+    _copy_point(la, points[3])
+    _copy_point(la, points[4])
+    _copy_point(lb, points[2])
+    _copy_point(lb, points[5])
+    _copy_point(lb, points[6]) # max bound
+    _copy_point(lb, points[7])
+    points[1][LORENTZ_X_1] = lb[LORENTZ_X_1]
+    points[3][LORENTZ_X_2] = lb[LORENTZ_X_2]
+    points[4][LORENTZ_T] = lb[LORENTZ_T]
+    points[2][LORENTZ_T] = la[LORENTZ_T]
+    points[5][LORENTZ_X_2] = la[LORENTZ_X_2]
+    points[7][LORENTZ_X_1] = la[LORENTZ_X_1]
+
+    # Get (max 24) intersection points with hyperboloid
+    _get_line_hyperboloid_intersection(points[0], points[1], intersect[0], intersect[1])
+    _get_line_hyperboloid_intersection(points[0], points[3], intersect[2], intersect[3])
+    _get_line_hyperboloid_intersection(points[0], points[4], intersect[4], intersect[5])
+    _get_line_hyperboloid_intersection(points[6], points[5], intersect[6], intersect[7])
+    _get_line_hyperboloid_intersection(points[6], points[7], intersect[8], intersect[9])
+    _get_line_hyperboloid_intersection(points[6], points[2], intersect[10], intersect[11])
+    _get_line_hyperboloid_intersection(points[1], points[2], intersect[12], intersect[13])
+    _get_line_hyperboloid_intersection(points[1], points[5], intersect[14], intersect[15])
+    _get_line_hyperboloid_intersection(points[3], points[2], intersect[16], intersect[17])
+    _get_line_hyperboloid_intersection(points[3], points[7], intersect[18], intersect[19])
+    _get_line_hyperboloid_intersection(points[4], points[5], intersect[20], intersect[21])
+    _get_line_hyperboloid_intersection(points[4], points[7], intersect[22], intersect[23])
+
+    # Compute pairwise (lorentz) distance between the selected points
+    for i in range(24):
+        if intersect[i] == NULL:
+            continue
+        for j in range(i, 24):
+            if intersect[j] == NULL:
+                continue
+            dist = distance_lorentz(intersect[i], intersect[j])
+            if dist > max_dist:
+                max_dist = dist
+
+    return max_dist
 
 # cdef DTYPE_t[3] mid_point(DTYPE_t[3] min_v, DTYPE_t[3] max_v) nogil:
 #     return [euclidean_mean(min_v[0], max_v[0]), 
@@ -251,11 +357,19 @@ cdef class _OcTree:
         # validate X and prepare for query
         # X = check_array(X, dtype=DTYPE_t, order='C')
         n_samples = X.shape[0]
+        LX = np.zeros((n_samples, 3))
+        
+        # Change points from Poincare to Lorentz
+        for i in range(n_samples):
+            poincare_to_lorentz(X[i, 0], X[i, 1], pt)
+            LX[i, 0] = pt[LORENTZ_T]
+            LX[i, 1] = pt[LORENTZ_X_1]
+            LX[i, 2] = pt[LORENTZ_X_2]
 
         capacity = 100
         self._resize(capacity)
-        m = np.min(X, axis=0)
-        M = np.max(X, axis=0)
+        m = np.min(LX, axis=0)
+        M = np.max(LX, axis=0)
         # Scale the maximum to get all points strictly in the tree bounding box
         # The 3 bounds are for positive, negative and small values
         M = np.maximum(M * (1. + 1e-3 * np.sign(M)), M + 1e-3)
@@ -272,8 +386,8 @@ cdef class _OcTree:
 
         # Insert all points
         for i in range(n_samples):
-            # Change points from Poincare to Lorentz
-            poincare_to_lorentz(X[i, 0], X[i, 1], pt)
+            for j in range(self.n_dimensions):
+                pt[j] = LX[i, j]
 
             self.insert_point(pt, i)
 
@@ -1243,7 +1357,7 @@ def gradient(float[:] timings,
              bint grad_fix=0):
     cdef double C
     cdef int n
-    cdef _OcTree qt = _OcTree(pos_output.shape[1], 100)
+    cdef _OcTree qt = _OcTree(pos_output.shape[1] + 1, verbose)
     cdef clock_t t1 = 0, t2 = 0
 
     global AREA_SPLIT
