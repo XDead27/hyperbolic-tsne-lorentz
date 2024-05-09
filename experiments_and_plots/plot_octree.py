@@ -5,13 +5,15 @@ This scripts takes an embedding of the C.Elegans data set and plots a polar quad
 # IMPORTS #
 ###########
 import ctypes
+from collections import deque
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib
+from matplotlib import cm
 import pandas as pd
 import seaborn as sns
 from hyperbolicTSNE.hyperbolic_barnes_hut.lotsne import _OcTree
-# from hyperbolicTSNE.hyperbolic_barnes_hut.tsne import distance_py
+from hyperbolicTSNE.hyperbolic_barnes_hut.lotsne import distance_py
 
 ##############
 # PLOT SETUP #
@@ -219,10 +221,100 @@ def poincare_to_lorentz(y):
 #     ax.set_thetagrids(thetagrids)
 #     ax.grid(True)
 
+def plot_wire_cube(p1, p2, color, ax):
+    # Define the vertices of the cube
+    vertices = np.array([
+        p1,
+        [p2[0], p1[1], p1[2]],
+        [p2[0], p2[1], p1[2]],
+        [p1[0], p2[1], p1[2]],
+        [p1[0], p1[1], p2[2]],
+        [p2[0], p1[1], p2[2]],
+        p2,
+        [p1[0], p2[1], p2[2]]
+    ])
+
+    # Define the edges of the cube
+    edges = [
+        (0, 1), (1, 2), (2, 3), (3, 0),
+        (4, 5), (5, 6), (6, 7), (7, 4),
+        (0, 4), (1, 5), (2, 6), (3, 7)
+    ]
+
+    for edge in edges:
+        ax.plot3D(*zip(vertices[edge[0]], vertices[edge[1]]), color=color)
+
+def plot_octree(points, qp_idx, ax):
+    rticks, thetagrids = [], []
+
+    cart_points = points
+
+    pqt = _OcTree(cart_points.shape[1] + 1, verbose=0)
+    pqt.build_tree(cart_points)
+
+    theta = 0.5
+
+    idx, summary = pqt._py_summarize(cart_points[qp_idx], cart_points, angle=theta)
+
+    sizes = []
+    for j in range(idx // 4):
+        size = summary[j * 4 + 2 + 1]
+        sizes.append(int(size))
+
+    summarized = set()
+    display = set()
+
+    cnt = 0
+    for c_id, cell in enumerate(pqt.__getstate__()['cells']):
+        if cnt <= 3:
+            display.add(c_id)
+        cnt += 1
+
+        if c_id != 0 and cell['parent'] not in display:
+            continue
+
+        # if cell['parent'] in summarized:
+        #     summarized.add(c_id)
+        #     continue
+
+        min_bound = cell['min_bounds']
+        max_bound = cell['max_bounds']
+        barycenter = cell['barycenter']
+        max_width = cell['squared_max_width']
+
+        print("Barycenter for cell [" + str(c_id) + "]:")
+        print(barycenter)
+
+        h_dist = distance_py(
+            np.array(cart_points[qp_idx], dtype=ctypes.c_double), np.array(barycenter, dtype=ctypes.c_double)
+        ) ** 2
+
+        # print("DIST " + str(h_dist))
+        if h_dist < MACHINE_EPSILON:
+            continue
+        ratio = (max_width / h_dist)
+        is_summ = ratio < (theta ** 2)
+
+        # print("MAX_WIDTH " + str(max_width) + ", RATIO " + str(ratio))
+
+        # if is_summ:
+        #     summarized.add(c_id)
+        # else:
+        #     continue
+
+        # print("DRAW FFS")
+        ax.scatter([barycenter[0]], [barycenter[1]], [barycenter[2]], linewidth=0.5, marker='.', c="#253494", zorder=1, s=5)
+        dif = ((np.floor(max_bound - min_bound) * 173) % 255) / 255
+        plot_wire_cube(min_bound, max_bound, (dif[0], dif[1], 1.0), ax)
+
 def plot_lorentz_embedding(points, labels, ax):
     lorentz_points = np.array([poincare_to_lorentz(p) for p in points])
 
-    df = pd.DataFrame({"x": lorentz_points[:, 0], "y": lorentz_points[:, 1], "z": lorentz_points[:, 2], "l": labels})
+    X = lorentz_points[:, 0]
+    Y = lorentz_points[:, 1]
+    Z = lorentz_points[:, 2]
+
+    df = pd.DataFrame({"x": X, "y": Y, "z": Z, "l": labels})
     random_idx = np.random.randint(lorentz_points.shape[0])
 
     colormap = np.zeros(lorentz_points.shape[0])
@@ -235,9 +327,22 @@ def plot_lorentz_embedding(points, labels, ax):
 
     v = 15.0
     lim = [-v, v]
-    ax.set_xlim(lim)
-    ax.set_ylim(lim)
-    ax.set_zlim([0.0, 2*v])
+    # ax.set_xlim(lim)
+    # ax.set_ylim(lim)
+    # ax.set_zlim([0.0, 2*v])
+
+    return random_idx
+
+def plot_hyperboloid(ax):
+    # Make data.
+    X = np.arange(-1.40976908e+16, 8.42840804e+15, 10000000000000)
+    Y = np.arange(-16339744986096034.000000, 11265913305324462.000000, 100000000000000)
+    X, Y = np.meshgrid(X, Y)
+    Z = np.sqrt(X**2 + Y**2 + 1)
+
+    # Plot the surface.
+    surf = ax.plot_surface(X, Y, Z, cmap=cm.coolwarm,
+                           linewidth=0, antialiased=False, alpha=0.7)
 
 def plot_embedding(points, labels, ax):
 
@@ -274,16 +379,25 @@ def plot_embedding(points, labels, ax):
 
 
 if __name__ == '__main__':
-    fig = plt.figure(figsize=plt.figaspect(2.0))
+    # fig = plt.figure(figsize=plt.figaspect(2.0))
+    fig = plt.figure()
     ax1 = fig.add_subplot(2, 1, 1, projection='3d')
-    ax2 = fig.add_subplot(2, 1, 2)
+    # ax2 = fig.add_subplot(2, 1, 2)
 
     points = np.load("../teaser_files/c_elegans_embedding.npy")
+    points_simple = np.array([[0, 0],
+                       [0.5, 0.5],
+                       [-0.5, 0.5],
+                       [-0.5, -0.5],
+                       [0.5, -0.5]])
     labels = np.load("../teaser_files/c_elegans_labels.npy", allow_pickle=True)
 
-    plot_lorentz_embedding(points, labels, ax1)
-    plot_embedding(points, labels, ax2)
+    # qp_idx = plot_lorentz_embedding(points, labels, ax1)
+    plot_hyperboloid(ax1)
+    plot_octree(points, 0, ax1)
+    # plot_embedding(points, labels, ax2)
 
     plt.tight_layout()
 
     plt.savefig("../teaser_files/c_elegans_octree.png")
+    plt.show()

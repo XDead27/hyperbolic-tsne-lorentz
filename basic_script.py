@@ -8,10 +8,11 @@ from hyperbolicTSNE import load_data, Datasets, SequentialOptimizer, initializat
 data_home = "datasets"
 log_path = "temp/poincare/"  # path for saving embedding snapshots
 
+model = "lorentz"
 only_animate = False
 seed = 42
 dataset = Datasets.PLANARIA  # the Datasets handler provides access to several data sets used throughout the repository
-num_points = 10000  # we use a subset for demonstration purposes, full MNIST has N=70000
+num_points = 7000  # we use a subset for demonstration purposes, full MNIST has N=70000
 perp = 30  # we use a perplexity of 30 in this example
 
 dataX, dataLabels, D, V, _ = load_data(
@@ -42,7 +43,7 @@ opt_config = dict(
     area_split=False,  # To build or not build the polar quad tree based on equal area splitting or - alternatively - on equal length splitting
     n_iter_check=10,  # Needed for early stopping criterion
     size_tol=0.999,  # Size of the embedding to be used as early stopping criterion
-    hyperbolic_model="lorentz"
+    hyperbolic_model=model
 )
 
 opt_params = SequentialOptimizer.sequence_poincare(**opt_config)
@@ -88,4 +89,13 @@ try:
 except ValueError:
     hyperbolicEmbedding = find_last_embedding(log_path)
     traceback.print_exc()
+
+# Create a rendering of the embedding and save it to a file
+if not os.path.exists("results"):
+    os.mkdir("results")
+fig = plot_poincare(hyperbolicEmbedding, dataLabels)
+fig.savefig(f"results/{dataset.name}_{model}.png")
+
+# This renders a GIF animation of the embedding process. If FFMPEG is installed, the command also supports .mp4 as file ending 
+animate(logging_dict, dataLabels, f"results/{dataset.name}_{model}_ani.gif", fast=True, plot_ee=True)
 
