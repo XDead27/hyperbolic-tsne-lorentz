@@ -218,8 +218,6 @@ cdef DTYPE_t _get_line_hyperboloid_intersection(DTYPE_t[3] la, DTYPE_t[3] lb, DT
     c_c = v_0[2] * v_0[2] - v_0[0] * v_0[0] - v_0[1] * v_0[1] - 1
     delta = c_b * c_b - 4 * c_a * c_c
     
-    # printf("[GET_LINE_HYPERB_INTERSECT] Vars:\n\tv_0: (%f, %f, %f)\n\tv_d: (%f, %f, %f)\n\tDelta: %f\n", 
-    #        v_0[0], v_0[1], v_0[2], v_d[0], v_d[1], v_d[2], delta)
 
     # Get intersection points with hyperboloid
     if delta < 0:
@@ -231,18 +229,15 @@ cdef DTYPE_t _get_line_hyperboloid_intersection(DTYPE_t[3] la, DTYPE_t[3] lb, DT
     w0 = aux2 - aux1
     w1 = -aux1 - aux2
 
-    # printf("[GET_LINE_HYPERB_INTERSECT] x0: %f, x1: %f\n", w0, w1)
 
     # Select only those which lie on the segment of the cube
     if _check_dist_param_value(w0, v_0[2], v_d[2]):
         _get_point_param(w0, v_0, v_d, res1)
         cnts[0] = 1
-        # printf("[GET_LINE_HYPERB_INTERSECT] Chosen x0!")
 
     if delta > 0 and _check_dist_param_value(w1, v_0[2], v_d[2]):
         _get_point_param(w1, v_0, v_d, res2)
         cnts[1] = 1
-        # printf("[GET_LINE_HYPERB_INTERSECT] Chosen x1!")
 
     return w0
 
@@ -258,7 +253,6 @@ cdef DTYPE_t get_max_dist_hyperboloid_sect(DTYPE_t[3] la, DTYPE_t[3] lb) nogil:
     cdef DTYPE_t max_dist = 0.0, dist
     cdef int[24] cnts
 
-    # printf("[GET_MAX_HYPERBOLOID_SECT] Bounds: (%f, %f, %f) (%f, %f, %f)\n", la[0], la[1], la[2], lb[0], lb[1], lb[2])
 
     # Setup points (too lazy to think of algorithm)
     _copy_point(la, points[0]) # min bound
@@ -275,10 +269,6 @@ cdef DTYPE_t get_max_dist_hyperboloid_sect(DTYPE_t[3] la, DTYPE_t[3] lb) nogil:
     points[2][LORENTZ_T] = la[LORENTZ_T]
     points[5][LORENTZ_X_2] = la[LORENTZ_X_2]
     points[7][LORENTZ_X_1] = la[LORENTZ_X_1]
-
-    # printf("[GET_MAX_HYPERBOLOID_SECT] Points:\n")
-    # for i in range(8):
-    #     printf("\t(%f, %f, %f)\n", points[i][0], points[i][1], points[i][2])
 
     # Get (max 24) intersection points with hyperboloid
     _get_line_hyperboloid_intersection(points[0], points[1], intersect[0], intersect[1], &cnts[0])
@@ -302,17 +292,10 @@ cdef DTYPE_t get_max_dist_hyperboloid_sect(DTYPE_t[3] la, DTYPE_t[3] lb) nogil:
             if cnts[j] == 0:
                 continue
             dist = distance_lorentz(intersect[i], intersect[j])
-            # printf("[GET_MAX_HYPERBOLOID_SECT] CNT0 CNT1: %d %d\n", cnts[i], cnts[j])
-            # printf("[GET_MAX_HYPERBOLOID_SECT] (%f, %f, %f) - (%f, %f, %f) = %f\n", intersect[i][0], intersect[i][1], intersect[i][2], intersect[j][0], intersect[j][1], intersect[j][2], dist)
             if dist > max_dist:
                 max_dist = dist
 
     return max_dist
-
-# cdef DTYPE_t[3] mid_point(DTYPE_t[3] min_v, DTYPE_t[3] max_v) nogil:
-#     return [euclidean_mean(min_v[0], max_v[0]), 
-#             euclidean_mean(min_v[1], max_v[1]),
-#             euclidean_mean(min_v[2], max_v[2])]
 
 cdef class _OcTree:
     """Array-based representation of a OcTree.
@@ -377,10 +360,6 @@ cdef class _OcTree:
             # DTYPE_t[3] debug_p1 = [-2, -2, 1]
             # DTYPE_t[3] debug_p2 = [2, 2, 1]
             # double debug_t
-            
-        # # Debug
-        # debug_t = _get_line_hyperboloid_intersection(debug_p1, debug_p2, debug_res[0], debug_res[1], debug_cnts)
-        # printf("Debug: (%f) (%f, %f, %f); (%f, %f, %f)\n", debug_t, debug_res[0][0], debug_res[0][1], debug_res[0][2], debug_res[1][0], debug_res[1][1], debug_res[1][2])
 
         # validate X and prepare for query
         # X = check_array(X, dtype=DTYPE_t, order='C')
@@ -639,10 +618,8 @@ cdef class _OcTree:
             root.center[i] = (max_bounds[i] + min_bounds[i]) / 2.
 
         # Compute maximum squared distance of the root by intersecting with the hyperboloid
-        # printf("[OcTree] Root bounds are (%f, %f, %f) and (%f, %f, %f)\n", min_bounds[0], min_bounds[1], min_bounds[2], max_bounds[0], max_bounds[1], max_bounds[2])
         width = get_max_dist_hyperboloid_sect(root.min_bounds, root.max_bounds)
         root.squared_max_width = max(root.squared_max_width, width*width)
-        # printf("[OcTree] Root max width is %f\n", width)
 
         root.cell_id = 0
 
@@ -708,7 +685,6 @@ cdef class _OcTree:
         #     gradient and distance methods to summarize (cleaneast, hardest)
         
         lorentz_to_poincare(cell.barycenter, poincare_barycenter)
-        # printf("[Octree] Cell barycenter: %f %f\n", poincare_barycenter[0], poincare_barycenter[1])
 
         results[idx_d] = 0.
         for i in range(actual_dims):
@@ -1364,9 +1340,7 @@ cdef double compute_gradient_negative(double[:, :] pos_reference,
             # if take_timing:
             #     t3 = clock()
             for ax in range(n_dimensions):
-                # printf("%f ", neg_force[ax])
                 neg_f[i * n_dimensions + ax] = neg_force[ax]
-            # printf("\n")
             # if take_timing:
             #     dta += t2 - t1
             #     dtb += t3 - t2
