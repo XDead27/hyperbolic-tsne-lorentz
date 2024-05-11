@@ -1249,6 +1249,8 @@ cdef double compute_gradient_negative(double[:, :] pos_reference,
 
                 # if size > 1:
                 #     printf("[QuadTree] Size: %g, %g\n", dist2s, dist2s * size / dist2s)
+                # if size > 1:
+                #     printf("[Octree] Size: %g, %g\n", dist2s, dist2s * size / dist2s)
 
                 sum_Q += size * qijZ   # size of the node * q
 

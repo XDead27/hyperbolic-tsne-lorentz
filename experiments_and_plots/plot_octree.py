@@ -14,6 +14,7 @@ import pandas as pd
 import seaborn as sns
 from hyperbolicTSNE.hyperbolic_barnes_hut.lotsne import _OcTree
 from hyperbolicTSNE.hyperbolic_barnes_hut.lotsne import distance_py
+from hyperbolicTSNE import load_data, Datasets, initialization 
 
 ##############
 # PLOT SETUP #
@@ -247,9 +248,9 @@ def plot_wire_cube(p1, p2, color, ax):
 def plot_octree(points, qp_idx, ax):
     rticks, thetagrids = [], []
 
-    cart_points = points
+    cart_points = np.array(points, dtype=np.float128)
 
-    pqt = _OcTree(cart_points.shape[1] + 1, verbose=0)
+    pqt = _OcTree(3, verbose=0)
     pqt.build_tree(cart_points)
 
     theta = 0.5
@@ -266,23 +267,23 @@ def plot_octree(points, qp_idx, ax):
 
     cnt = 0
     for c_id, cell in enumerate(pqt.__getstate__()['cells']):
-        if cnt <= 3:
-            display.add(c_id)
-        cnt += 1
-
-        if c_id != 0 and cell['parent'] not in display:
-            continue
-
-        # if cell['parent'] in summarized:
-        #     summarized.add(c_id)
+        # if cnt <= 3:
+        #     display.add(c_id)
+        # cnt += 1
+        #
+        # if c_id != 0 and cell['parent'] not in display:
         #     continue
+
+        if cell['parent'] in summarized:
+            summarized.add(c_id)
+            continue
 
         min_bound = cell['min_bounds']
         max_bound = cell['max_bounds']
         barycenter = cell['barycenter']
         max_width = cell['squared_max_width']
 
-        print("Barycenter for cell [" + str(c_id) + "]:")
+        # print("Barycenter for cell [" + str(c_id) + "]:")
         print(barycenter)
 
         h_dist = distance_py(
@@ -297,10 +298,10 @@ def plot_octree(points, qp_idx, ax):
 
         # print("MAX_WIDTH " + str(max_width) + ", RATIO " + str(ratio))
 
-        # if is_summ:
-        #     summarized.add(c_id)
-        # else:
-        #     continue
+        if is_summ:
+            summarized.add(c_id)
+        else:
+            continue
 
         # print("DRAW FFS")
         ax.scatter([barycenter[0]], [barycenter[1]], [barycenter[2]], linewidth=0.5, marker='.', c="#253494", zorder=1, s=5)
@@ -321,7 +322,7 @@ def plot_lorentz_embedding(points, labels, ax):
     colormap[random_idx] = 1
 
     for s in np.unique(labels):
-        ax.scatter(df.x[df.l == s], df.y[df.l == s], df.z[df.l == s], linewidth=0.5, marker='.', c=c_elegans_palette[s], zorder=-10)
+        ax.scatter(df.x[df.l == s], df.y[df.l == s], df.z[df.l == s], linewidth=0.5, marker='.', zorder=-10)
     
     ax.scatter(lorentz_points[random_idx, 0], lorentz_points[random_idx, 1], lorentz_points[random_idx, 2], marker='x', c='#E31A1C', zorder=10)
 
@@ -384,20 +385,45 @@ if __name__ == '__main__':
     ax1 = fig.add_subplot(2, 1, 1, projection='3d')
     # ax2 = fig.add_subplot(2, 1, 2)
 
-    points = np.load("../teaser_files/c_elegans_embedding.npy")
-    points_simple = np.array([[0, 0],
-                       [0.5, 0.5],
-                       [-0.5, 0.5],
-                       [-0.5, -0.5],
-                       [0.5, -0.5]])
-    labels = np.load("../teaser_files/c_elegans_labels.npy", allow_pickle=True)
+    data_home = "datasets"
 
-    # qp_idx = plot_lorentz_embedding(points, labels, ax1)
-    plot_hyperboloid(ax1)
-    plot_octree(points, 0, ax1)
+    seed = 42
+    dataset = Datasets.MNIST  # the Datasets handler provides access to several data sets used throughout the repository
+    num_points = 10000  # we use a subset for demonstration purposes, full MNIST has N=70000
+    perp = 30  # we use a perplexity of 30 in this example
+
+    dataX, dataLabels, D, V, _ = load_data(
+        dataset, 
+        data_home=data_home, 
+        random_state=seed, 
+        to_return="X_labels_D_V",
+        hd_params={"perplexity": perp}, 
+        sample=num_points, 
+        knn_method="hnswlib"  # we use an approximation of high-dimensional neighbors to speed up computations
+    )
+
+    # Compute an initial embedding of the data via PCA
+    X_embedded = initialization(
+        n_samples=dataX.shape[0],
+        n_components=2,
+        X=dataX,
+        random_state=seed,
+        method="pca"
+    )
+
+    # points_simple = np.array([[0, 0],
+    #                    [0.5, 0.5],
+    #                    [-0.5, 0.5],
+    #                    [-0.5, -0.5],
+    #                    [0.5, -0.5]])
+    # labels = np.load("../teaser_files/c_elegans_labels.npy", allow_pickle=True)
+
+    qp_idx = plot_lorentz_embedding(X_embedded, dataLabels, ax1)
+    # plot_hyperboloid(ax1)
+    plot_octree(dataX, 0, ax1)
     # plot_embedding(points, labels, ax2)
 
     plt.tight_layout()
 
-    plt.savefig("../teaser_files/c_elegans_octree.png")
+    plt.savefig("teaser_files/c_elegans_octree.png")
     plt.show()

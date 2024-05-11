@@ -14,6 +14,7 @@ from libc.stdlib cimport malloc, free, realloc
 from cython.parallel cimport prange, parallel
 from libc.string cimport memcpy
 from libc.stdint cimport SIZE_MAX
+from libc.math cimport isnan
 
 np.import_array()
 
@@ -26,11 +27,12 @@ cdef float FLOAT32_TINY = np.finfo(np.float32).tiny
 
 # Useful to void division by zero or divergence to +inf.
 cdef float FLOAT64_EPS = np.finfo(np.float64).eps
+cdef float FLOAT128_EPS = np.finfo(np.float128).eps
 
 cdef double EPSILON = 1e-5
 cdef double MAX_TANH = 15.0
 cdef double BOUNDARY = 1 - EPSILON
-cdef int LORENTZ_T = 2 #TODO: flip this to index 2
+cdef int LORENTZ_T = 2
 cdef int LORENTZ_X_1 = 1
 cdef int LORENTZ_X_2 = 0
 cdef double MACHINE_EPSILON = np.finfo(np.double).eps
@@ -139,8 +141,8 @@ cdef extern from "numpy/arrayobject.h":
 #
 #     return sqrt((ch - 1) / (ch + 1))
 
-cdef DTYPE_t sq_norm(DTYPE_t x, DTYPE_t y, DTYPE_t z) nogil:
-    return x ** 2 + y ** 2 + z ** 2
+cdef DTYPE_t sq_norm(DTYPE_t x, DTYPE_t y) nogil:
+    return x * x + y * y
 
 # cdef DTYPE_t poincare_to_klein(DTYPE_t c, DTYPE_t sq_n) nogil:
 #     return 2 * c / (1 + sq_n)
@@ -150,7 +152,7 @@ cdef DTYPE_t sq_norm(DTYPE_t x, DTYPE_t y, DTYPE_t z) nogil:
 
 cdef void poincare_to_lorentz(DTYPE_t y1, DTYPE_t y2, DTYPE_t* result) nogil:
     cdef:
-        double term = 1 - y1 * y1 - y2 * y2
+        DTYPE_t term = 1 - y1 * y1 - y2 * y2
 
     result[LORENTZ_T] = 2 / term - 1
     result[LORENTZ_X_1] = 2 * y1 / term
@@ -165,39 +167,42 @@ cdef void lorentz_to_klein(DTYPE_t* lp, DTYPE_t* result) nogil:
     result[1] = lp[LORENTZ_X_2] / lp[LORENTZ_T]
 
 cdef void klein_to_lorentz(DTYPE_t* z, DTYPE_t* result) nogil:
-    cdef double term = sqrt(1 - z[0] * z[0] - z[1] * z[1])
+    cdef DTYPE_t term = sqrt(1 - z[0] * z[0] - z[1] * z[1])
 
     result[LORENTZ_T] = 1 / term
     result[LORENTZ_X_1] = z[0] / term
     result[LORENTZ_X_2] = z[1] / term
 
 cdef DTYPE_t lorentz_factor(DTYPE_t sq_n) nogil:
-    return 1 / sqrt(1 - sq_n)
+    cdef DTYPE_t x = sqrt(1 - sq_n)
+    
+    x = max(x, FLOAT64_EPS)
+    return 1 / x
 
-cdef double minkowski_bilinear(DTYPE_t[3] lp1, DTYPE_t[3] lp2) nogil:
+cdef DTYPE_t minkowski_bilinear(DTYPE_t[3] lp1, DTYPE_t[3] lp2) nogil:
     return lp1[LORENTZ_X_1] * lp2[LORENTZ_X_1] + lp1[LORENTZ_X_2] * lp2[LORENTZ_X_2] - lp1[LORENTZ_T] * lp2[LORENTZ_T]
 
 # Distance function for the hyperboloid model
-cdef double distance_lorentz(DTYPE_t[3] lp1, DTYPE_t[3] lp2) nogil:
+cdef DTYPE_t distance_lorentz(DTYPE_t[3] lp1, DTYPE_t[3] lp2) nogil:
     return acosh( - minkowski_bilinear(lp1, lp2))
 
 # Checks if value lies in the upper polynomial and is in range 0, 1
-cdef bint _check_dist_param_value(double val, DTYPE_t z0, DTYPE_t z_d) nogil:
-    cdef double t = z0 + val * z_d
+cdef bint _check_dist_param_value(DTYPE_t val, DTYPE_t z0, DTYPE_t z_d) nogil:
+    cdef DTYPE_t t = z0 + val * z_d
 
     return t >= 1. and val <= 1. and val >= 0
 
-cdef void _get_point_param(double param, DTYPE_t[3] v_0, DTYPE_t[3] v_d, DTYPE_t* result) nogil:
+cdef void _get_point_param(DTYPE_t param, DTYPE_t[3] v_0, DTYPE_t[3] v_d, DTYPE_t* result) nogil:
     result[LORENTZ_X_1] = v_0[0] + v_d[0] * param
     result[LORENTZ_X_2] = v_0[1] + v_d[1] * param
     result[LORENTZ_T] = v_0[2] + v_d[2] * param
 
 # Get intersection between line described by two points and the hyperboloid
-cdef double _get_line_hyperboloid_intersection(DTYPE_t[3] la, DTYPE_t[3] lb, DTYPE_t* res1, DTYPE_t* res2, int* cnts) nogil:
+cdef DTYPE_t _get_line_hyperboloid_intersection(DTYPE_t[3] la, DTYPE_t[3] lb, DTYPE_t* res1, DTYPE_t* res2, int* cnts) nogil:
     cdef:
         DTYPE_t[3] v_d
         DTYPE_t[3] v_0
-        double c_a, c_b, c_c, delta, w0, w1, aux0, aux1, aux2
+        DTYPE_t c_a, c_b, c_c, delta, w0, w1, aux0, aux1, aux2
     
     # Setup variables
     cnts[0] = 0
@@ -250,7 +255,7 @@ cdef void _copy_point(DTYPE_t[3] p, DTYPE_t* res) nogil:
 cdef DTYPE_t get_max_dist_hyperboloid_sect(DTYPE_t[3] la, DTYPE_t[3] lb) nogil:
     cdef DTYPE_t[8][3] points
     cdef DTYPE_t[24][3] intersect
-    cdef double max_dist = 0.0, dist
+    cdef DTYPE_t max_dist = 0.0, dist
     cdef int[24] cnts
 
     # printf("[GET_MAX_HYPERBOLOID_SECT] Bounds: (%f, %f, %f) (%f, %f, %f)\n", la[0], la[1], la[2], lb[0], lb[1], lb[2])
@@ -439,6 +444,14 @@ cdef class _OcTree:
             for i in range(self.n_dimensions):
                 cell.barycenter[i] = point[i]
             cell.point_index = point_index
+
+            lorentz_to_klein(point, klein_point)
+
+            temp_norm = sq_norm(klein_point[0],
+                                klein_point[1])
+            temp_lorentz = lorentz_factor(temp_norm)
+            cell.lorentz_factor_sum = temp_lorentz
+
             if self.verbose > 10:
                 printf("[OcTree] inserted point %li in cell %li\n",
                        point_index, cell_id)
@@ -451,21 +464,27 @@ cdef class _OcTree:
             lorentz_to_klein(point, klein_point)
 
             temp_norm = sq_norm(klein_point[0],
-                                klein_point[1],
-                                0)
+                                klein_point[1])
+
+            if temp_norm >= 1.:
+                printf("We kinda have an issue...\n")
             temp_lorentz = lorentz_factor(temp_norm)
+            if isnan(temp_lorentz):
+                printf("We have enother issue...\n")
 
             lorentz_to_klein(cell.barycenter, klein_barycenter)
 
-            klein_barycenter[0] = ((klein_barycenter[0] * cell.lorentz_factor_sum) + temp_lorentz * klein_point[0]) / (cell.lorentz_factor_sum + temp_lorentz)
-            klein_barycenter[1] = ((klein_barycenter[1] * cell.lorentz_factor_sum) + temp_lorentz * klein_point[1]) / (cell.lorentz_factor_sum + temp_lorentz)
+            klein_barycenter[0] = (klein_barycenter[0] * cell.lorentz_factor_sum + temp_lorentz * klein_point[0]) / (cell.lorentz_factor_sum + temp_lorentz)
+            klein_barycenter[1] = (klein_barycenter[1] * cell.lorentz_factor_sum + temp_lorentz * klein_point[1]) / (cell.lorentz_factor_sum + temp_lorentz)
 
             klein_to_lorentz(klein_barycenter, cell.barycenter)
 
-            cell.lorentz_factor_sum = cell.lorentz_factor_sum + temp_lorentz
+            cell.lorentz_factor_sum += temp_lorentz
 
             # Increase the size of the subtree starting from this cell
             cell.cumulative_size += 1
+            # if cell_id == 0:
+            #     printf("Temp_lorentz: %Lf\nSum: %Lf\nBarycenter: %Lf %Lf %Lf\n", temp_lorentz, cell.lorentz_factor_sum, cell.barycenter[0], cell.barycenter[1], cell.barycenter[2])
 
             # Insert child in the correct subtree
             selected_child = self._select_child(point, cell)
@@ -509,7 +528,7 @@ cdef class _OcTree:
             Cell* child
             int i
             DTYPE_t[2] klein_barycenter
-            double temp_norm
+            DTYPE_t temp_norm
 
         # If the maximal capacity of the Tree have been reached, double the capacity
         # We need to save the current cell id and the current point to retrieve them
@@ -552,7 +571,7 @@ cdef class _OcTree:
 
         # Compute lorentz factor sum (TODO get rid of it)
         lorentz_to_klein(child.barycenter, klein_barycenter)
-        temp_norm = sq_norm(klein_barycenter[0], klein_barycenter[1], 0)
+        temp_norm = sq_norm(klein_barycenter[0], klein_barycenter[1])
         child.lorentz_factor_sum = lorentz_factor(temp_norm)
 
         # Compute the maximum squared distance by intersecting with hyperboloid
@@ -671,9 +690,10 @@ cdef class _OcTree:
             number of elements in the results array.
         """
         cdef:
-            int i, idx_d = idx + self.n_dimensions
+            int actual_dims = 2 # XXX: Modify later
+            int i, idx_d = idx + actual_dims 
             bint duplicate = True
-            double dist
+            DTYPE_t dist
             Cell* cell = &self.cells[cell_id]
             DTYPE_t[2] poincare_barycenter
 
@@ -688,9 +708,10 @@ cdef class _OcTree:
         #     gradient and distance methods to summarize (cleaneast, hardest)
         
         lorentz_to_poincare(cell.barycenter, poincare_barycenter)
+        # printf("[Octree] Cell barycenter: %f %f\n", poincare_barycenter[0], poincare_barycenter[1])
 
         results[idx_d] = 0.
-        for i in range(self.n_dimensions):
+        for i in range(actual_dims):
             results[idx + i] = distance_grad_q(point, poincare_barycenter, i)
             duplicate &= fabs(results[idx + i]) <= EPSILON
 
@@ -709,7 +730,7 @@ cdef class _OcTree:
         if cell.is_leaf or (
                 (cell.squared_max_width / results[idx_d]) < squared_theta):
             results[idx_d + 1] = <DTYPE_t> cell.cumulative_size
-            return idx + self.n_dimensions - 1 + 2
+            return idx + actual_dims + 2
 
         else:
             # Recursively compute the summary in nodes
@@ -883,48 +904,48 @@ cdef class _OcTree:
 # Dist and Dist Grad functions
 #################################################
 # NON-PRIORITY TODO: Change these to the Lorentz model distance and gradient
-cdef double distance_q(DTYPE_t* u, DTYPE_t* v) nogil:
+cdef DTYPE_t distance_q(DTYPE_t* u, DTYPE_t* v) nogil:
     return distance(u[0], u[1], v[0], v[1])
 
 # Distance gradient on the poincare model (takes two pointers as arguments)
-cdef double distance_grad_q(DTYPE_t* u, DTYPE_t* v, int ax) nogil:
+cdef DTYPE_t distance_grad_q(DTYPE_t* u, DTYPE_t* v, int ax) nogil:
     return distance_grad(u[0], u[1], v[0], v[1], ax)
 
 # Pointwise distance on the poincare model
-cpdef double distance(double u0, double u1, double v0, double v1) nogil:
+cpdef DTYPE_t distance(DTYPE_t u0, DTYPE_t u1, DTYPE_t v0, DTYPE_t v1) nogil:
     if fabs(u0 - v0) <= EPSILON and fabs(u1 - v1) <= EPSILON:
         return 0.
 
     cdef:
-        double uv2 = ((u0 - v0) * (u0 - v0)) + ((u1 - v1) * (u1 - v1))
-        double u_sq = clamp(u0 * u0 + u1 * u1, 0, BOUNDARY)
-        double v_sq = clamp(v0 * v0 + v1 * v1, 0, BOUNDARY)
-        double alpha = 1. - u_sq
-        double beta = 1. - v_sq
-        double result = acosh( 1. + 2. * uv2 / ( alpha * beta ) )
+        DTYPE_t uv2 = ((u0 - v0) * (u0 - v0)) + ((u1 - v1) * (u1 - v1))
+        DTYPE_t u_sq = clamp(u0 * u0 + u1 * u1, 0, BOUNDARY)
+        DTYPE_t v_sq = clamp(v0 * v0 + v1 * v1, 0, BOUNDARY)
+        DTYPE_t alpha = 1. - u_sq
+        DTYPE_t beta = 1. - v_sq
+        DTYPE_t result = acosh( 1. + 2. * uv2 / ( alpha * beta ) )
 
     return result
 
 # Distance gradient on the poincare model
-cdef double distance_grad(double u0, double u1, double v0, double v1, int ax) nogil:
+cdef DTYPE_t distance_grad(DTYPE_t u0, DTYPE_t u1, DTYPE_t v0, DTYPE_t v1, int ax) nogil:
     if fabs(u0 - v0) <= EPSILON and fabs(u1 - v1) <= EPSILON:
         return 0.
 
     cdef:
-        double a = u0 - v0
-        double b = u1 - v1
-        double uv2 = a * a + b * b
+        DTYPE_t a = u0 - v0
+        DTYPE_t b = u1 - v1
+        DTYPE_t uv2 = a * a + b * b
 
-        double u_sq = clamp(u0 * u0 + u1 * u1, 0, BOUNDARY)
-        double v_sq = clamp(v0 * v0 + v1 * v1, 0, BOUNDARY)
-        double alpha = 1. - u_sq
-        double beta = 1. - v_sq
+        DTYPE_t u_sq = clamp(u0 * u0 + u1 * u1, 0, BOUNDARY)
+        DTYPE_t v_sq = clamp(v0 * v0 + v1 * v1, 0, BOUNDARY)
+        DTYPE_t alpha = 1. - u_sq
+        DTYPE_t beta = 1. - v_sq
 
-        double gamma = 1. + (2. / (alpha * beta)) * uv2
-        double shared_scalar = 4. / fmax(beta * sqrt((gamma * gamma) - 1.), MACHINE_EPSILON)
+        DTYPE_t gamma = 1. + (2. / (alpha * beta)) * uv2
+        DTYPE_t shared_scalar = 4. / fmax(beta * sqrt((gamma * gamma) - 1.), MACHINE_EPSILON)
 
-        double u_scalar = (v_sq - 2. * (u0 * v0 + u1 * v1) + 1.) / (alpha * alpha)
-        double v_scalar = 1. / alpha
+        DTYPE_t u_scalar = (v_sq - 2. * (u0 * v0 + u1 * v1) + 1.) / (alpha * alpha)
+        DTYPE_t v_scalar = 1. / alpha
 
     if ax == 0:
         return shared_scalar * (u_scalar * u0 - v_scalar * v0)
@@ -1060,7 +1081,7 @@ cdef double exact_compute_gradient(float[:] timings,
         long i, coord
         int ax
         long n_samples = pos_reference.shape[0]
-        int n_dimensions = qt.n_dimensions
+        int n_dimensions = 2 # XXX: Magic number
         double sQ
         double error
         clock_t t1 = 0, t2 = 0
@@ -1112,7 +1133,7 @@ cdef double exact_compute_gradient_negative(double[:, :] pos_reference,
                                       int num_threads) nogil:
     cdef:
         int ax
-        int n_dimensions = qt.n_dimensions
+        int n_dimensions = 2 # XXX: Magic number
         int offset = n_dimensions + 2
         long i, j, k, idx
         long n = stop - start
@@ -1174,7 +1195,7 @@ cdef double compute_gradient(float[:] timings,
         long i, coord
         int ax
         long n_samples = pos_reference.shape[0]
-        int n_dimensions = qt.n_dimensions
+        int n_dimensions = 2 # XXX: Magic number
         double sQ
         double error
         clock_t t1 = 0, t2 = 0
@@ -1278,7 +1299,7 @@ cdef double compute_gradient_negative(double[:, :] pos_reference,
         stop = pos_reference.shape[0]
     cdef:
         int ax
-        int n_dimensions = qt.n_dimensions
+        int n_dimensions = 2 # XXX: Magic number
         int offset = n_dimensions + 2
         long i, j, idx
         long n = stop - start
@@ -1326,7 +1347,7 @@ cdef double compute_gradient_negative(double[:, :] pos_reference,
                 qijZ = 1. / (1. + dist2s)  # 1/(1+dist)
 
                 # if size > 1:
-                #     printf("[QuadTree] Size: %g, %g\n", dist2s, dist2s * size / dist2s)
+                #     printf("[Octree] Size: %g, %g\n", dist2s, dist2s * size / dist2s)
 
                 sum_Q += size * qijZ   # size of the node * q
 
@@ -1343,7 +1364,9 @@ cdef double compute_gradient_negative(double[:, :] pos_reference,
             # if take_timing:
             #     t3 = clock()
             for ax in range(n_dimensions):
+                # printf("%f ", neg_force[ax])
                 neg_f[i * n_dimensions + ax] = neg_force[ax]
+            # printf("\n")
             # if take_timing:
             #     dta += t2 - t1
             #     dtb += t3 - t2
