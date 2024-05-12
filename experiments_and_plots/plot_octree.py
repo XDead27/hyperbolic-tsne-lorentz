@@ -5,16 +5,25 @@ This scripts takes an embedding of the C.Elegans data set and plots a polar quad
 # IMPORTS #
 ###########
 import ctypes
-from collections import deque
+import traceback
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib
 from matplotlib import cm
 import pandas as pd
 import seaborn as sns
+from hyperbolicTSNE.util import find_last_embedding
 from hyperbolicTSNE.hyperbolic_barnes_hut.lotsne import _OcTree
 from hyperbolicTSNE.hyperbolic_barnes_hut.lotsne import distance_py
-from hyperbolicTSNE import load_data, Datasets, initialization 
+from hyperbolicTSNE import load_data, Datasets, initialization, SequentialOptimizer, HyperbolicTSNE
+
+#############
+# VARIABLES #
+#############
+model = "lorentz"
+exaggeration_factor = 12
+ex_iterations = 250
+main_iterations = 750
 
 ##############
 # PLOT SETUP #
@@ -26,68 +35,6 @@ c = '#0173B2'  # Color for the tree
 s = '-'  # style of the tree lines
 w = 0.5  # width of the tree lines
 
-c_elegans_palette = {
-    'ABarpaaa_lineage': '#91003f',  # embryonic lineage
-    'Germline': '#7f2704',
-    # Somatic gonad precursor cell
-    'Z1_Z4': '#800026',
-
-    # Two embryonic hypodermal cells that may provide a scaffold for the early organization of ventral bodywall muscles
-    'XXX': '#fb8072',
-
-    'Ciliated_amphid_neuron': '#c51b8a', 'Ciliated_non_amphid_neuron': '#fa9fb5',
-
-    # immune
-    'Coelomocyte': '#ffff33', 'T': '#54278f',
-
-    # Exceratory
-    'Excretory_cell': '#004529',
-    'Excretory_cell_parent': '#006837',
-    'Excretory_duct_and_pore': '#238443',
-    'Parent_of_exc_duct_pore_DB_1_3': '#41ab5d',
-    'Excretory_gland': '#78c679',
-    'Parent_of_exc_gland_AVK': '#addd8e',
-    'Rectal_cell': '#d9f0a3',
-    'Rectal_gland': '#f7fcb9',
-    'Intestine': '#7fcdbb',
-
-    # esophagus, crop, gizzard (usually) and intestine
-    'Pharyngeal_gland': '#fed976',
-    'Pharyngeal_intestinal_valve': '#feb24c',
-    'Pharyngeal_marginal_cell': '#fd8d3c',
-    'Pharyngeal_muscle': '#fc4e2a',
-    'Pharyngeal_neuron': '#e31a1c',
-
-    # hypodermis (epithelial)
-    'Parent_of_hyp1V_and_ant_arc_V': '#a8ddb5',
-    'hyp1V_and_ant_arc_V': '#ccebc5',
-    'Hypodermis': '#253494',
-    'Seam_cell': '#225ea8',
-    'Arcade_cell': '#1d91c0',
-
-    # set of six cells that form a thin cylindrical sheet between pharynx and ring neuropile
-    'GLR': '#1f78b4',
-
-    # Glia, also called glial cells or neuroglia, are non-neuronal cells in the central nervous system
-    'Glia': '#377eb8',
-
-    # head mesodermal cell: the middle layer of cells or tissues of an embryo
-    'Body_wall_muscle': '#9e9ac8',
-    'hmc': '#54278f',
-    'hmc_and_homolog': '#02818a',
-    'hmc_homolog': '#bcbddc',
-    'Intestinal_and_rectal_muscle': '#41b6c4',
-    # Postembryonic mesoblast: the mesoderm of an embryo in its earliest stages.
-    'M_cell': '#3f007d',
-
-    # pharyngeal gland cel
-    'G2_and_W_blasts': '#abdda4',
-
-    'unannotated': '#969696',
-    'not provided': '#969696'
-}
-
-
 ##################
 # Helper Methods #
 ##################
@@ -96,131 +43,11 @@ def get_random_point():
     angle = np.pi * np.random.uniform(0, 2)
     return np.array([length, angle])
 
-
-def cart_to_polar(p):
-    length = np.sqrt(p[0] ** 2 + p[1] ** 2)
-    angle = np.arctan2(p[1], p[0])
-    angle = angle if angle > 0 else angle + 2 * np.pi
-    return np.array([length, angle])
-
-
-def cart_to_polar_2(p):
-    radius = np.sqrt(p[0] * p[0] + p[1] * p[1])
-    # Calculating angle (theta) in radian
-    theta = np.arctan(p[1] / p[0])
-    # Converting theta from radian to degree
-    theta = 180 * theta / np.pi
-    return np.array([radius, theta])
-
-
-def cart2pol(p):
-    x, y = p
-    rho = np.sqrt(x**2 + y**2)
-    phi = np.arctan2(y, x)
-    return rho, phi
-
 def poincare_to_lorentz(y):
     term = 1 - y[0] * y[0] - y[1] * y[1]
     return [2 * y[0] / term,
             2 * y[1] / term,
             2 / term - 1]
-
-# def plot_tree(points, ax):
-#     rticks, thetagrids = [], []
-#
-#     polar_points = np.array([cart_to_polar(p) for p in points])
-#     cart_points = points
-#
-#     pqt = _QuadTree(cart_points.shape[1], verbose=0)
-#     pqt.build_tree(cart_points)
-#
-#     theta = 0.5
-#     random_idx = np.random.randint(polar_points.shape[0])
-#
-#     idx, summary = pqt._py_summarize(cart_points[random_idx], cart_points, angle=theta)
-#     colormap = np.zeros(polar_points.shape[0])
-#     colormap[random_idx] = 1
-#
-#     sizes = []
-#     for j in range(idx // 4):
-#         size = summary[j * 4 + 2 + 1]
-#         sizes.append(int(size))
-#
-#     ax.scatter(polar_points[:, 1], polar_points[:, 0], linewidth=0.5, marker='.', c='lightgray', zorder=-10, s=2)
-#     ax.scatter(polar_points[random_idx, 1], polar_points[random_idx, 0], marker='x', c='#E31A1C', zorder=10)
-#
-#     summarized = set()
-#
-#     for c_id, cell in enumerate(pqt.__getstate__()['cells']):
-#
-#         if cell['parent'] in summarized:
-#             summarized.add(c_id)
-#             continue
-#
-#         range_min = cell['min_bounds'][0]
-#         range_max = cell['max_bounds'][0]
-#         angle_min = cell['min_bounds'][1]
-#         angle_max = cell['max_bounds'][1]
-#         barycenter = cell['barycenter']
-#         max_width = cell['squared_max_width']
-#         polar_barycenter = cart_to_polar(barycenter)
-#
-#         h_dist = distance_py(
-#             np.array(cart_points[random_idx], dtype=ctypes.c_double), np.array(barycenter, dtype=ctypes.c_double)
-#         ) ** 2
-#
-#         if h_dist < MACHINE_EPSILON:
-#             continue
-#         ratio = (max_width / h_dist)
-#         is_summ = ratio < (theta ** 2)
-#
-#         if is_summ:
-#             summarized.add(c_id)
-#         else:
-#             continue
-#
-#         ax.scatter([polar_barycenter[1]], [polar_barycenter[0]], linewidth=0.5, marker='.', c="#253494", zorder=1, s=5)
-#         ax.plot(
-#             np.linspace(angle_min, angle_max, 100),
-#             np.ones(100) * range_min,
-#             color=c,
-#             linestyle=s,
-#             linewidth=w,
-#             antialiased=True,
-#             zorder=-1
-#         )
-#         ax.plot(
-#             np.linspace(angle_min, angle_max, 100),
-#             np.ones(100) * range_max,
-#             color=c,
-#             linestyle=s,
-#             linewidth=w,
-#             antialiased=True,
-#             zorder=-1
-#         )
-#         ax.plot(
-#             np.ones(100) * angle_min,
-#             np.linspace(range_min, range_max, 100),
-#             color=c,
-#             linestyle=s,
-#             linewidth=w,
-#             antialiased=True,
-#             zorder=-1
-#         )
-#         ax.plot(
-#             np.ones(100) * angle_max,
-#             np.linspace(range_min, range_max, 100),
-#             color=c,
-#             linestyle=s,
-#             linewidth=w,
-#             antialiased=True,
-#             zorder=-1
-#         )
-#
-#     ax.set_rmax(1)
-#     ax.set_rticks(rticks)  # Less radial ticksz
-#     ax.set_thetagrids(thetagrids)
-#     ax.grid(True)
 
 def plot_wire_cube(p1, p2, color, ax):
     # Define the vertices of the cube
@@ -245,10 +72,59 @@ def plot_wire_cube(p1, p2, color, ax):
     for edge in edges:
         ax.plot3D(*zip(vertices[edge[0]], vertices[edge[1]]), color=color)
 
-def plot_octree(points, qp_idx, ax):
-    rticks, thetagrids = [], []
+def compute_embedding(dataX):
+    learning_rate = (dataX.shape[0] * 1) / (exaggeration_factor * 1000)
 
-    cart_points = np.array(points, dtype=np.float128)
+    opt_config = dict(
+        learning_rate_ex=learning_rate,
+        learning_rate_main=learning_rate,
+        exaggeration=exaggeration_factor, 
+        exaggeration_its=ex_iterations, 
+        gradientDescent_its=main_iterations, 
+        vanilla=False,  # if vanilla is set to true, regular gradient descent without any modifications is performed; for  vanilla set to false, the optimization makes use of momentum and gains
+        momentum_ex=0.5,  # Set momentum during early exaggeration to 0.5
+        momentum=0.8,  # Set momentum during non-exaggerated gradient descent to 0.8
+        exact=False,  # To use the quad tree for acceleration (like Barnes-Hut in the Euclidean setting) or to evaluate the gradient exactly
+        area_split=False,  # To build or not build the polar quad tree based on equal area splitting or - alternatively - on equal length splitting
+        n_iter_check=10,  # Needed for early stopping criterion
+        size_tol=0.999,  # Size of the embedding to be used as early stopping criterion
+        hyperbolic_model=model
+    )
+
+    opt_params = SequentialOptimizer.sequence_poincare(**opt_config)
+
+    print(f"config: {opt_config}")
+
+    # Compute an initial embedding of the data via PCA
+    X_embedded = initialization(
+        n_samples=dataX.shape[0],
+        n_components=2,
+        X=dataX,
+        random_state=seed,
+        method="pca"
+    )
+
+
+    # Initialize the embedder
+    htsne = HyperbolicTSNE(
+        init=X_embedded, 
+        n_components=2, 
+        metric="precomputed", 
+        verbose=True, 
+        opt_method=SequentialOptimizer, 
+        opt_params=opt_params
+    )
+
+    # Compute the embedding
+    try:
+        hyperbolicEmbedding = htsne.fit_transform((D, V))
+    except ValueError:
+        traceback.print_exc()
+
+    return hyperbolicEmbedding
+
+def plot_octree(points, qp_idx, ax):
+    cart_points = np.array(points, dtype=np.float64)
 
     pqt = _OcTree(3, verbose=0)
     pqt.build_tree(cart_points)
@@ -273,7 +149,6 @@ def plot_octree(points, qp_idx, ax):
         #
         # if c_id != 0 and cell['parent'] not in display:
         #     continue
-
         if cell['parent'] in summarized:
             summarized.add(c_id)
             continue
@@ -300,12 +175,17 @@ def plot_octree(points, qp_idx, ax):
 
         if is_summ:
             summarized.add(c_id)
-        else:
+        elif cnt != 0:
             continue
 
         # print("DRAW FFS")
-        ax.scatter([barycenter[0]], [barycenter[1]], [barycenter[2]], linewidth=0.5, marker='.', c="#253494", zorder=1, s=5)
+        cnt = 1
+        ax.scatter([barycenter[1]], [barycenter[0]], [barycenter[2]], linewidth=0.5, marker='.', c="#253494", zorder=1, s=5)
         dif = ((np.floor(max_bound - min_bound) * 173) % 255) / 255
+
+        # Swap axes, but for why ??
+        min_bound[0], min_bound[1] = min_bound[1], min_bound[0]
+        max_bound[0], max_bound[1] = max_bound[1], max_bound[0]
         plot_wire_cube(min_bound, max_bound, (dif[0], dif[1], 1.0), ax)
 
 def plot_lorentz_embedding(points, labels, ax):
@@ -345,40 +225,6 @@ def plot_hyperboloid(ax):
     surf = ax.plot_surface(X, Y, Z, cmap=cm.coolwarm,
                            linewidth=0, antialiased=False, alpha=0.7)
 
-def plot_embedding(points, labels, ax):
-
-    df = pd.DataFrame({"x": points[:, 0], "y": points[:, 1]})
-
-    point_size = 2
-    font_size = 5
-    alpha = 1.0
-
-    sns.scatterplot(
-        data=df,
-        x="x",
-        y="y",
-        hue=labels,
-        hue_order=np.unique(labels),
-        palette=c_elegans_palette,
-        alpha=alpha,
-        edgecolor="none",
-        ax=ax,
-        s=point_size,
-        legend=False
-    )
-
-    circle = plt.Circle((0, 0), radius=1, fc='none', color='black')
-    ax.add_patch(circle)
-    ax.plot(0, 0, '.', c=(0, 0, 0), ms=4)
-
-    # fig.tight_layout()
-    ax.axis('off')
-    ax.axis('equal')
-
-    ax.set_ylim([-0.94, 0.94])
-    ax.set_xlim([-0.94, 0.94])
-
-
 if __name__ == '__main__':
     # fig = plt.figure(figsize=plt.figaspect(2.0))
     fig = plt.figure()
@@ -389,7 +235,7 @@ if __name__ == '__main__':
 
     seed = 42
     dataset = Datasets.MNIST  # the Datasets handler provides access to several data sets used throughout the repository
-    num_points = 10000  # we use a subset for demonstration purposes, full MNIST has N=70000
+    num_points = 100  # we use a subset for demonstration purposes, full MNIST has N=70000
     perp = 30  # we use a perplexity of 30 in this example
 
     dataX, dataLabels, D, V, _ = load_data(
@@ -402,25 +248,10 @@ if __name__ == '__main__':
         knn_method="hnswlib"  # we use an approximation of high-dimensional neighbors to speed up computations
     )
 
-    # Compute an initial embedding of the data via PCA
-    X_embedded = initialization(
-        n_samples=dataX.shape[0],
-        n_components=2,
-        X=dataX,
-        random_state=seed,
-        method="pca"
-    )
-
-    # points_simple = np.array([[0, 0],
-    #                    [0.5, 0.5],
-    #                    [-0.5, 0.5],
-    #                    [-0.5, -0.5],
-    #                    [0.5, -0.5]])
-    # labels = np.load("../teaser_files/c_elegans_labels.npy", allow_pickle=True)
-
+    X_embedded = compute_embedding(dataX)
     qp_idx = plot_lorentz_embedding(X_embedded, dataLabels, ax1)
     # plot_hyperboloid(ax1)
-    plot_octree(dataX, 0, ax1)
+    plot_octree(X_embedded, qp_idx, ax1)
     # plot_embedding(points, labels, ax2)
 
     plt.tight_layout()

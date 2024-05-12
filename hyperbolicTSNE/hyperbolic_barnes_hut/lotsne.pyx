@@ -133,22 +133,8 @@ cdef extern from "numpy/arrayobject.h":
                                 void* data, int flags, object obj)
     int PyArray_SetBaseObject(np.ndarray arr, PyObject* obj)
 
-# cdef DTYPE_t er_to_hr(DTYPE_t er) nogil:
-#     return acosh(1 + 2 * er * er / (1 - er * er + MACHINE_EPSILON))
-#
-# cdef DTYPE_t hr_to_er(DTYPE_t hr) nogil:
-#     cdef double ch = cosh(hr)
-#
-#     return sqrt((ch - 1) / (ch + 1))
-
 cdef DTYPE_t sq_norm(DTYPE_t x, DTYPE_t y) nogil:
     return x * x + y * y
-
-# cdef DTYPE_t poincare_to_klein(DTYPE_t c, DTYPE_t sq_n) nogil:
-#     return 2 * c / (1 + sq_n)
-#
-# cdef DTYPE_t klein_to_poincare(DTYPE_t c, DTYPE_t sq_n) nogil:
-#     return c / (1 + sqrt(1 - sq_n))
 
 cdef void poincare_to_lorentz(DTYPE_t y1, DTYPE_t y2, DTYPE_t* result) nogil:
     cdef:
@@ -620,6 +606,7 @@ cdef class _OcTree:
         # Compute maximum squared distance of the root by intersecting with the hyperboloid
         width = get_max_dist_hyperboloid_sect(root.min_bounds, root.max_bounds)
         root.squared_max_width = max(root.squared_max_width, width*width)
+        # printf("[OcTree] Root max width is: %f\n", width)
 
         root.cell_id = 0
 

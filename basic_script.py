@@ -8,8 +8,8 @@ from hyperbolicTSNE import load_data, Datasets, SequentialOptimizer, initializat
 data_home = "datasets"
 log_path = "temp/poincare/"  # path for saving embedding snapshots
 
-# model = "poincare"
-model = "lorentz"
+model = "poincare"
+# model = "lorentz"
 only_animate = False
 seed = 42
 dataset = Datasets.MNIST  # the Datasets handler provides access to several data sets used throughout the repository

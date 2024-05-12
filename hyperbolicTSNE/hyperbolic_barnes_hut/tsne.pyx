@@ -555,6 +555,7 @@ cdef class _QuadTree:
         root.center[RANGE] = mid_range(min_bounds[RANGE], max_bounds[RANGE])
 
         width = get_max_for_polar_rect(min_bounds, max_bounds)
+        printf("[OcTree] Root max width is: %f\n", width)
         root.squared_max_width =  width * width
         root.cell_id = 0
 
