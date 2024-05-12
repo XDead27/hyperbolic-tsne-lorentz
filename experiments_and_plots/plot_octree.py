@@ -160,9 +160,6 @@ def plot_octree(points, qp_idx, ax):
         barycenter = cell['barycenter']
         max_width = cell['squared_max_width']
 
-        # print("Barycenter for cell [" + str(c_id) + "]:")
-        print(barycenter)
-
         h_dist = distance_py(
             np.array(cart_points[qp_idx], dtype=ctypes.c_double), np.array(barycenter, dtype=ctypes.c_double)
         ) ** 2
@@ -181,12 +178,12 @@ def plot_octree(points, qp_idx, ax):
             continue
 
         # print("DRAW FFS")
-        ax.scatter([barycenter[1]], [barycenter[0]], [barycenter[2]], linewidth=0.5, marker='.', c="#253494", zorder=1, s=5)
+        ax.scatter([barycenter[0]], [barycenter[1]], [barycenter[2]], linewidth=1., marker="^", c="#253494", zorder=1, s=5)
         dif = ((np.floor(max_bound - min_bound) * 173) % 255) / 255
 
         # Swap axes, but for why ??
-        min_bound[0], min_bound[1] = min_bound[1], min_bound[0]
-        max_bound[0], max_bound[1] = max_bound[1], max_bound[0]
+        # min_bound[0], min_bound[1] = min_bound[1], min_bound[0]
+        # max_bound[0], max_bound[1] = max_bound[1], max_bound[0]
         plot_wire_cube(min_bound, max_bound, (dif[0], dif[1], 1.0), ax)
 
         if cnt == 0:
@@ -241,7 +238,7 @@ if __name__ == '__main__':
 
     seed = 42
     dataset = Datasets.MNIST  # the Datasets handler provides access to several data sets used throughout the repository
-    num_points = 10000  # we use a subset for demonstration purposes, full MNIST has N=70000
+    num_points = 100  # we use a subset for demonstration purposes, full MNIST has N=70000
     perp = 30  # we use a perplexity of 30 in this example
 
     dataX, dataLabels, D, V, _ = load_data(
