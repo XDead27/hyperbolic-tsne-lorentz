@@ -140,6 +140,8 @@ def plot_octree(points, qp_idx, ax):
 
     summarized = set()
     display = set()
+    mib = 0
+    mab = 0
 
     cnt = 0
     for c_id, cell in enumerate(pqt.__getstate__()['cells']):
@@ -179,7 +181,6 @@ def plot_octree(points, qp_idx, ax):
             continue
 
         # print("DRAW FFS")
-        cnt = 1
         ax.scatter([barycenter[1]], [barycenter[0]], [barycenter[2]], linewidth=0.5, marker='.', c="#253494", zorder=1, s=5)
         dif = ((np.floor(max_bound - min_bound) * 173) % 255) / 255
 
@@ -187,6 +188,12 @@ def plot_octree(points, qp_idx, ax):
         min_bound[0], min_bound[1] = min_bound[1], min_bound[0]
         max_bound[0], max_bound[1] = max_bound[1], max_bound[0]
         plot_wire_cube(min_bound, max_bound, (dif[0], dif[1], 1.0), ax)
+
+        if cnt == 0:
+            mib = min_bound
+            mab = max_bound
+            cnt = 1
+    return mib, mab
 
 def plot_lorentz_embedding(points, labels, ax):
     lorentz_points = np.array([poincare_to_lorentz(p) for p in points])
@@ -214,28 +221,27 @@ def plot_lorentz_embedding(points, labels, ax):
 
     return random_idx
 
-def plot_hyperboloid(ax):
+def plot_hyperboloid(min_bounds, max_bounds, ax):
     # Make data.
-    X = np.arange(-1.40976908e+16, 8.42840804e+15, 10000000000000)
-    Y = np.arange(-16339744986096034.000000, 11265913305324462.000000, 100000000000000)
+    X = np.linspace(min_bounds[0], max_bounds[0], 30)
+    Y = np.linspace(min_bounds[1], max_bounds[1], 30)
     X, Y = np.meshgrid(X, Y)
     Z = np.sqrt(X**2 + Y**2 + 1)
 
     # Plot the surface.
-    surf = ax.plot_surface(X, Y, Z, cmap=cm.coolwarm,
-                           linewidth=0, antialiased=False, alpha=0.7)
+    ax.plot_surface(X, Y, Z, edgecolor='darkgreen', lw=0.5, rstride=8, cstride=8, alpha=0.05)
 
 if __name__ == '__main__':
     # fig = plt.figure(figsize=plt.figaspect(2.0))
     fig = plt.figure()
-    ax1 = fig.add_subplot(2, 1, 1, projection='3d')
+    ax1 = fig.add_subplot(1, 1, 1, projection='3d')
     # ax2 = fig.add_subplot(2, 1, 2)
 
     data_home = "datasets"
 
     seed = 42
     dataset = Datasets.MNIST  # the Datasets handler provides access to several data sets used throughout the repository
-    num_points = 100  # we use a subset for demonstration purposes, full MNIST has N=70000
+    num_points = 10000  # we use a subset for demonstration purposes, full MNIST has N=70000
     perp = 30  # we use a perplexity of 30 in this example
 
     dataX, dataLabels, D, V, _ = load_data(
@@ -250,8 +256,8 @@ if __name__ == '__main__':
 
     X_embedded = compute_embedding(dataX)
     qp_idx = plot_lorentz_embedding(X_embedded, dataLabels, ax1)
-    # plot_hyperboloid(ax1)
-    plot_octree(X_embedded, qp_idx, ax1)
+    mib, mab = plot_octree(X_embedded, qp_idx, ax1)
+    plot_hyperboloid(mib, mab, ax1)
     # plot_embedding(points, labels, ax2)
 
     plt.tight_layout()
