@@ -204,7 +204,6 @@ cdef DTYPE_t _get_line_hyperboloid_intersection(DTYPE_t[3] la, DTYPE_t[3] lb, DT
     c_c = v_0[2] * v_0[2] - v_0[0] * v_0[0] - v_0[1] * v_0[1] - 1
     delta = c_b * c_b - 4 * c_a * c_c
     
-
     # Get intersection points with hyperboloid
     if delta < 0:
         return 0
@@ -214,7 +213,6 @@ cdef DTYPE_t _get_line_hyperboloid_intersection(DTYPE_t[3] la, DTYPE_t[3] lb, DT
     aux2 = sqrt(delta) / aux0
     w0 = aux2 - aux1
     w1 = -aux1 - aux2
-
 
     # Select only those which lie on the segment of the cube
     if _check_dist_param_value(w0, v_0[2], v_d[2]):
@@ -341,14 +339,7 @@ cdef class _OcTree:
             int i
             DTYPE_t[3] pt
             DTYPE_t[3] min_bounds, max_bounds
-            # DTYPE_t[2][3] debug_res
-            # int[2] debug_cnts
-            # DTYPE_t[3] debug_p1 = [-2, -2, 1]
-            # DTYPE_t[3] debug_p2 = [2, 2, 1]
-            # double debug_t
 
-        # validate X and prepare for query
-        # X = check_array(X, dtype=DTYPE_t, order='C')
         n_samples = X.shape[0]
         LX = np.zeros((n_samples, 3))
         
@@ -448,8 +439,6 @@ cdef class _OcTree:
 
             # Increase the size of the subtree starting from this cell
             cell.cumulative_size += 1
-            # if cell_id == 0:
-            #     printf("Temp_lorentz: %Lf\nSum: %Lf\nBarycenter: %Lf %Lf %Lf\n", temp_lorentz, cell.lorentz_factor_sum, cell.barycenter[0], cell.barycenter[1], cell.barycenter[2])
 
             # Insert child in the correct subtree
             selected_child = self._select_child(point, cell)
@@ -1274,8 +1263,6 @@ cdef double compute_gradient_negative(double[:, :] pos_reference,
         double* summary
         double* pos
         double* neg_force
-        # clock_t t1 = 0, t2 = 0, t3 = 0
-
 
     with nogil, parallel(num_threads=num_threads):
         # Define thread-local buffers
@@ -1291,13 +1278,7 @@ cdef double compute_gradient_negative(double[:, :] pos_reference,
                 neg_force[ax] = 0.0
                 pos[ax] = pos_reference[i, ax]
 
-            # Find which nodes are summarizing and collect their centers of mass
-            # deltas, and sizes, into vectorized arrays
-            # if take_timing:
-            #     t1 = clock()
             idx = qt.summarize(pos, summary, theta*theta)
-            # if take_timing:
-            #     t2 = clock()
 
             # Compute the t-SNE negative force
             # for the digits dataset, walking the tree
@@ -1308,9 +1289,6 @@ cdef double compute_gradient_negative(double[:, :] pos_reference,
                 dist2s = summary[j * offset + n_dimensions]
                 size = summary[j * offset + n_dimensions + 1]
                 qijZ = 1. / (1. + dist2s)  # 1/(1+dist)
-
-                # if size > 1:
-                #     printf("[Octree] Size: %g, %g\n", dist2s, dist2s * size / dist2s)
 
                 sum_Q += size * qijZ   # size of the node * q
 
@@ -1324,21 +1302,13 @@ cdef double compute_gradient_negative(double[:, :] pos_reference,
                 for ax in range(n_dimensions):
                     neg_force[ax] += mult * summary[j * offset + ax]
 
-            # if take_timing:
-            #     t3 = clock()
             for ax in range(n_dimensions):
                 neg_f[i * n_dimensions + ax] = neg_force[ax]
-            # if take_timing:
-            #     dta += t2 - t1
-            #     dtb += t3 - t2
 
         free(force)
         free(pos)
         free(neg_force)
         free(summary)
-    # if take_timing:
-    #     printf("[t-SNE] Tree: %li clock ticks | ", dta)
-    #     printf("Force computation: %li clock ticks\n", dtb)
 
     # Put sum_Q to machine EPSILON to avoid divisions by 0
     sum_Q = max(sum_Q, FLOAT64_EPS)
