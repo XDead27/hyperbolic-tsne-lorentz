@@ -1,7 +1,9 @@
-import os
-import traceback
+import sys
+import numpy as np
+from hyperbolicTSNE import load_data, Datasets, initialization, HyperbolicKL
+from hyperbolicTSNE.solver_ import gradient_descent
 
-from hyperbolicTSNE import load_data, Datasets, SequentialOptimizer, initialization, HyperbolicTSNE, HyperbolicKL 
+num_its = int(sys.argv[1])
 
 data_home = "datasets"
 log_path = "temp/poincare/"  # path for saving embedding snapshots
@@ -29,24 +31,36 @@ X_embedded = initialization(
     random_state=seed,
     method="pca"
 )
+X_embedded_cpy = X_embedded.copy()
 
 hkl_params = HyperbolicKL.bh_tsne()
 hkl_params["params"]["calc_both"] = False
 hkl_params["params"]["area_split"] = False
 hkl_params["params"]["grad_fix"] = False 
 
+cf_params = {
+    "V": V,
+}
+
+print("############# POINCARE ##############")
+cfp = HyperbolicKL(n_components=2, other_params=hkl_params)
+gradient_descent(X_embedded, cfp, cf_params, n_iter=num_its, learning_rate=0.1, hyperbolic_model="poincare")
+
+# print(cfp.results)
+timings = np.mean(cfp.results, axis=0)
+print("--> Build time: " + str(timings[0]) + "s")
+print("--> Query time: " + str(timings[1]) + "s")
+print(" |--> neg: " + str(timings[2]) + "s")
+print(" |--> pos: " + str(timings[3]) + "s")
+
+print("############# LORENTZ ##############")
 cf = HyperbolicKL(n_components=2, other_params=hkl_params)
-cf.grad(model="lorentz", Y=X_embedded, V=V)
+gradient_descent(X_embedded_cpy, cf, cf_params, n_iter=num_its, learning_rate=0.1, hyperbolic_model="lorentz")
 
-timings = cf.results[0]
-print("Build time Lorentz: " + str(timings[0]) + "s")
-print("Queary time Lorentz: " + str(timings[1]) + "s")
-
-cf = HyperbolicKL(n_components=2, other_params=hkl_params)
-cf.grad(model="poincare", Y=X_embedded, V=V)
-
-timings = cf.results[0]
-print("Build time Poincare: " + str(timings[0]) + "s")
-print("Queary time Poincare: " + str(timings[1]) + "s")
-
+# print(cf.results)
+timings = np.mean(cf.results, axis=0)
+print("==> Build time: " + str(timings[0]) + "s")
+print("==> Query time: " + str(timings[1]) + "s")
+print(" |--> neg: " + str(timings[2]) + "s")
+print(" |--> pos: " + str(timings[3]) + "s")
 

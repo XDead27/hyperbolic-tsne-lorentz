@@ -331,9 +331,9 @@ def gradient_descent(
             toc_l = time()
             duration_l = toc_l - tic_l
 
-            # if isinstance(cf, HyperbolicKL):
-            #     logging_dict[logging_key]["times"].append(duration_l)
-            #     logging_dict[logging_key]["hyperbolic"].append(cf.results[-1])
+            if isinstance(cf, HyperbolicKL):
+                logging_dict[logging_key]["times"].append(duration_l)
+                logging_dict[logging_key]["hyperbolic"].append(cf.results[-1])
             
             # if not isinstance(cf, HyperbolicKL) or i % 50 == 0 or i == total_its - 1:
             log_iteration(logging_dict, logging_key, i, y, n_samples, n_components,
