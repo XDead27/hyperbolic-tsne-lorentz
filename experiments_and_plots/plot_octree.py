@@ -1,6 +1,3 @@
-"""
-This scripts takes an embedding of the C.Elegans data set and plots a polar quad tree on top of it.
-"""
 ###########
 # IMPORTS #
 ###########
@@ -49,7 +46,7 @@ def poincare_to_lorentz(y):
             2 * y[1] / term,
             2 / term - 1]
 
-def plot_wire_cube(p1, p2, color, ax):
+def plot_wire_cube(p1, p2, color, zorder, ax):
     # Define the vertices of the cube
     vertices = np.array([
         p1,
@@ -70,7 +67,7 @@ def plot_wire_cube(p1, p2, color, ax):
     ]
 
     for edge in edges:
-        ax.plot3D(*zip(vertices[edge[0]], vertices[edge[1]]), color=color)
+        ax.plot3D(*zip(vertices[edge[0]], vertices[edge[1]]), color=color, zorder=zorder, alpha=0.7)
 
 def compute_embedding(dataX):
     learning_rate = (dataX.shape[0] * 1) / (exaggeration_factor * 1000)
@@ -159,6 +156,7 @@ def plot_octree(points, qp_idx, ax):
         max_bound = cell['max_bounds']
         barycenter = cell['barycenter']
         max_width = cell['squared_max_width']
+        depth = cell['depth']
 
         h_dist = distance_py(
             np.array(cart_points[qp_idx], dtype=ctypes.c_double), np.array(barycenter, dtype=ctypes.c_double)
@@ -178,13 +176,10 @@ def plot_octree(points, qp_idx, ax):
             continue
 
         # print("DRAW FFS")
-        ax.scatter([barycenter[0]], [barycenter[1]], [barycenter[2]], linewidth=1., marker="^", c="#253494", zorder=1, s=5)
-        dif = ((np.floor(max_bound - min_bound) * 173) % 255) / 255
+        ax.scatter([barycenter[0]], [barycenter[1]], [barycenter[2]], linewidth=2., marker="^", c="#253494", zorder=1, s=5)
+        dif = ((depth * np.array([173, 31, 89])) % 255) / 255
 
-        # Swap axes, but for why ??
-        # min_bound[0], min_bound[1] = min_bound[1], min_bound[0]
-        # max_bound[0], max_bound[1] = max_bound[1], max_bound[0]
-        plot_wire_cube(min_bound, max_bound, (dif[0], dif[1], 1.0), ax)
+        plot_wire_cube(min_bound, max_bound, (dif[0], dif[1], dif[2]), depth + 2, ax)
 
         if cnt == 0:
             mib = min_bound
@@ -206,9 +201,9 @@ def plot_lorentz_embedding(points, labels, ax):
     colormap[random_idx] = 1
 
     for s in np.unique(labels):
-        ax.scatter(df.x[df.l == s], df.y[df.l == s], df.z[df.l == s], linewidth=0.5, marker='.', zorder=-10)
+        ax.scatter(df.x[df.l == s], df.y[df.l == s], df.z[df.l == s], linewidth=0.5, marker='.', zorder=1)
     
-    ax.scatter(lorentz_points[random_idx, 0], lorentz_points[random_idx, 1], lorentz_points[random_idx, 2], marker='x', c='#E31A1C', zorder=10)
+    ax.scatter(lorentz_points[random_idx, 0], lorentz_points[random_idx, 1], lorentz_points[random_idx, 2], marker='x', c='#E31A1C', zorder=20, lw=2., s=50)
 
     v = 15.0
     lim = [-v, v]
@@ -226,7 +221,7 @@ def plot_hyperboloid(min_bounds, max_bounds, ax):
     Z = np.sqrt(X**2 + Y**2 + 1)
 
     # Plot the surface.
-    ax.plot_surface(X, Y, Z, edgecolor='darkgreen', lw=0.5, rstride=8, cstride=8, alpha=0.05)
+    ax.plot_surface(X, Y, Z, edgecolor='darkgreen', lw=0.5, rstride=32, cstride=32, alpha=0.05, zorder=0)
 
 if __name__ == '__main__':
     # fig = plt.figure(figsize=plt.figaspect(2.0))
