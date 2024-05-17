@@ -136,18 +136,6 @@ cdef extern from "numpy/arrayobject.h":
 cdef DTYPE_t sq_norm(DTYPE_t x, DTYPE_t y) nogil:
     return x * x + y * y
 
-cdef void poincare_to_lorentz(DTYPE_t y1, DTYPE_t y2, DTYPE_t* result) nogil:
-    cdef:
-        DTYPE_t term = 1 - y1 * y1 - y2 * y2
-
-    result[LORENTZ_T] = 2 / term - 1
-    result[LORENTZ_X_1] = 2 * y1 / term
-    result[LORENTZ_X_2] = 2 * y2 / term
-
-cdef void lorentz_to_poincare(DTYPE_t* lp, DTYPE_t* result) nogil:
-    result[0] = lp[LORENTZ_X_1] / (1 + lp[LORENTZ_T])
-    result[1] = lp[LORENTZ_X_2] / (1 + lp[LORENTZ_T])
-
 cdef void lorentz_to_klein(DTYPE_t* lp, DTYPE_t* result) nogil:
     result[0] = lp[LORENTZ_X_1] / lp[LORENTZ_T]
     result[1] = lp[LORENTZ_X_2] / lp[LORENTZ_T]
@@ -271,7 +259,7 @@ cdef DTYPE_t get_max_dist_hyperboloid_sect(DTYPE_t[3] la, DTYPE_t[3] lb) nogil:
         for j in range(i, 24):
             if cnts[j] == 0:
                 continue
-            dist = distance_lorentz(intersect[i], intersect[j])
+            dist = distance_q(intersect[i], intersect[j])
             if dist > max_dist:
                 max_dist = dist
 
@@ -648,7 +636,6 @@ cdef class _OcTree:
             Cell* cell = &self.cells[cell_id]
             DTYPE_t[2] poincare_barycenter
 
-        # TODO: Either
         # (1) Change signature to receive Poincare point, then, for 
         #     each point in the tree, translate to Poincare model and
         #     use distance_grad() (easy, not clean)
@@ -855,10 +842,10 @@ cdef class _OcTree:
 #################################################
 # NON-PRIORITY TODO: Change these to the Lorentz model distance and gradient
 cdef DTYPE_t distance_q(DTYPE_t* u, DTYPE_t* v) nogil:
-    return distance_lorentz(u, v)
+    return distance_lorentz(u[0], u[1], u[2], v[0], v[1], v[2])
 
 # Distance gradient on the poincare model (takes two pointers as arguments)
-cdef void distance_grad_q(DTYPE_t* u, DTYPE_t* v, DTYPE_t* res) nogil:
+cdef void distance_grad_q(DTYPE_t[3] u, DTYPE_t[3] v, DTYPE_t* res) nogil:
     distance_grad_lorentz(u, v, res)
 
 # Pointwise distance on the poincare model
@@ -877,34 +864,13 @@ cpdef DTYPE_t distance(DTYPE_t u0, DTYPE_t u1, DTYPE_t v0, DTYPE_t v1) nogil:
     return result
 
 # Distance function for the hyperboloid model
-cdef DTYPE_t distance_lorentz(DTYPE_t[3] lp1, DTYPE_t[3] lp2) nogil:
+cpdef DTYPE_t distance_lorentz(DTYPE_t p0, DTYPE_t p1, DTYPE_t p2, DTYPE_t q0, DTYPE_t q1, DTYPE_t q2) nogil:
+    cdef DTYPE_t[3] lp1
+    cdef DTYPE_t[3] lp2
+    lp1[0] = p0; lp1[1] = p1; lp1[2] = p2
+    lp2[0] = q0; lp2[1] = q1; lp2[2] = q2
+
     return acosh( - minkowski_bilinear(lp1, lp2))
-
-# Distance gradient on the poincare model
-cdef DTYPE_t distance_grad(DTYPE_t u0, DTYPE_t u1, DTYPE_t v0, DTYPE_t v1, int ax) nogil:
-    if fabs(u0 - v0) <= EPSILON and fabs(u1 - v1) <= EPSILON:
-        return 0.
-
-    cdef:
-        DTYPE_t a = u0 - v0
-        DTYPE_t b = u1 - v1
-        DTYPE_t uv2 = a * a + b * b
-
-        DTYPE_t u_sq = clamp(u0 * u0 + u1 * u1, 0, BOUNDARY)
-        DTYPE_t v_sq = clamp(v0 * v0 + v1 * v1, 0, BOUNDARY)
-        DTYPE_t alpha = 1. - u_sq
-        DTYPE_t beta = 1. - v_sq
-
-        DTYPE_t gamma = 1. + (2. / (alpha * beta)) * uv2
-        DTYPE_t shared_scalar = 4. / fmax(beta * sqrt((gamma * gamma) - 1.), MACHINE_EPSILON)
-
-        DTYPE_t u_scalar = (v_sq - 2. * (u0 * v0 + u1 * v1) + 1.) / (alpha * alpha)
-        DTYPE_t v_scalar = 1. / alpha
-
-    if ax == 0:
-        return shared_scalar * (u_scalar * u0 - v_scalar * v0)
-    else:
-        return shared_scalar * (u_scalar * u1 - v_scalar * v1)
 
 # Distance gradient on the lorentz model, with respect to u 
 cdef void distance_grad_lorentz(DTYPE_t[3] u, DTYPE_t[3] v, DTYPE_t* res) nogil:
@@ -923,23 +889,6 @@ cdef void project_to_tangent_space(DTYPE_t[3] p, DTYPE_t[3] grad, DTYPE_t* res) 
     res[1] = grad[1] + p[1] * minkbil
     res[2] = grad[2] + p[2] * minkbil
 
-cdef void exp_map_single(double* x, double* v, double* res) nogil:
-    cdef double x_norm_sq, metric, v_norm, v_scalar
-    cdef double* y = <double*> malloc(sizeof(double) * 2)
-
-    x_norm_sq = clamp(x[0] ** 2 + x[1] ** 2, 0, BOUNDARY)
-
-    metric = 2. / (1. - x_norm_sq)
-    v_norm = sqrt(v[0] ** 2 + v[1] ** 2)
-
-    v_scalar = tanh(clamp((metric * v_norm) / 2., -MAX_TANH, MAX_TANH))
-
-    for j in range(2):
-        y[j] = (v[j] / v_norm) * v_scalar
-
-    mobius_addition(x, y, res)
-    free(y)
-
 # Projects a vector from the tangent space back on the hyperboloid
 cdef void exp_map_single_lorentz(DTYPE_t[3] p, DTYPE_t[3] v, DTYPE_t* res) nogil:
     cdef DTYPE_t norm = sqrt(minkowski_bilinear(v, v))
@@ -948,18 +897,6 @@ cdef void exp_map_single_lorentz(DTYPE_t[3] p, DTYPE_t[3] v, DTYPE_t* res) nogil
 
     for i in range(3):
         res[i] = coshval * p[i] + sinhval * v[i] / norm
-
-#TODO: this method gets called outside
-cpdef void exp_map(double[:, :] x, double[:, :] v, double[:, :] out, int num_threads) nogil:
-    cdef double* exp_map_res = <double*> malloc(sizeof(double) * 2)
-
-    for i in range(x.shape[0]):
-        exp_map_single(&x[i, 0], &v[i, 0], exp_map_res)
-
-        for j in range(2):
-            out[i, j] = exp_map_res[j]
-
-    free(exp_map_res)
 
 # Applies exp_map_single_lorentz for all points in p and vectors in v
 cpdef void exp_map_lorentz(DTYPE_t[:, :] p, DTYPE_t[:, :] v, DTYPE_t[:, :] res, int num_threads) nogil:
@@ -973,46 +910,6 @@ cpdef void exp_map_lorentz(DTYPE_t[:, :] p, DTYPE_t[:, :] v, DTYPE_t[:, :] res, 
 
     free(exp_map_res)
 
-cdef void mobius_addition(double* x, double* y, double* res) nogil:
-    cdef double y_norm_sq, x_norm_sq, x_scalar, y_scalar, r_term, denominator
-
-    x_norm_sq = clamp(x[0] ** 2 + x[1] ** 2, 0, BOUNDARY)
-    y_norm_sq = y[0] ** 2 + y[1] ** 2
-
-    r_term = 1. + 2. * (x[0] * y[0] + x[1] * y[1])
-
-    x_scalar = (r_term + y_norm_sq)
-    y_scalar = (1. - x_norm_sq)
-
-    denominator = r_term + x_norm_sq * y_norm_sq
-
-    for i in range(2):
-        res[i] = (x_scalar * x[i] + y_scalar * y[i]) / denominator
-
-cdef void log_map_single(double* x, double* y, double* res) nogil:
-    cdef double x_norm_sq, metric, y_scalar
-
-    x_norm_sq = clamp(x[0] ** 2 + x[1] ** 2, 0, BOUNDARY)
-
-    metric = 2. / (1. - x_norm_sq)
-
-    cdef double* u = <double*> malloc(sizeof(double) * 2)
-    for j in range(2):
-        u[j] = -x[j]
-
-    cdef double* mobius_res = <double *> malloc(sizeof(double) * 2)
-    mobius_addition(u, y, mobius_res)
-
-    free(u)
-
-    mob_add_norm = sqrt(mobius_res[0] ** 2 + mobius_res[1] ** 2)
-    y_scalar = atanh(fmin(mob_add_norm, 1. - EPSILON))
-
-    for j in range(2):
-        res[j] = (2. / metric) * y_scalar * (mobius_res[j] / mob_add_norm)
-
-    free(mobius_res)
-
 # Compute the logarithmic map on the hyperboloid #TODO: idk if this is actually right
 cdef void log_map_single_lorentz(DTYPE_t[3] p, DTYPE_t[3] q, DTYPE_t* res) nogil:
     cdef DTYPE_t beta = - minkowski_bilinear(p, q)
@@ -1020,18 +917,6 @@ cdef void log_map_single_lorentz(DTYPE_t[3] p, DTYPE_t[3] q, DTYPE_t* res) nogil
 
     for i in range(3):
         res[i] = q[i] - beta * p[i]
-
-#TODO: This method gets called in an experiment
-cpdef void log_map(double[:, :] x, double[:, :] y, double[:, :] out, int num_threads) nogil:
-    cdef double* log_map_res = <double*> malloc(sizeof(double) * 2)
-
-    for i in range(x.shape[0]):
-        log_map_single(&x[i, 0], &y[i, 0], log_map_res)
-
-        for j in range(2):
-            out[i, j] = log_map_res[j]
-
-    free(log_map_res)
 
 # Applies log_map_single_lorentz for every pair of points in x and y
 cpdef void log_map_lorentz(DTYPE_t[:, :] x, DTYPE_t[:, :] y, DTYPE_t[:, :] out, int num_threads) nogil:
@@ -1045,17 +930,6 @@ cpdef void log_map_lorentz(DTYPE_t[:, :] x, DTYPE_t[:, :] y, DTYPE_t[:, :] out, 
 
     free(log_map_res)
 
-#TODO: this method gets called outside. check if needed
-cpdef void constrain(double[:, :] y, double[:, :] out, int num_threads) nogil:
-    for i in range(y.shape[0]):
-        point_norm = sqrt(y[i, 0] ** 2 + y[i, 1] ** 2)
-
-        for j in range(2):
-            if point_norm >= BOUNDARY:
-                out[i, j] = (y[i, j] / point_norm) - EPSILON
-            else:
-                out[i, j] = y[i, j]
-
 cpdef void poincare_dists(double[:, :] y, double[:, :] out) nogil:
     cdef:
         long i, j
@@ -1067,11 +941,19 @@ cpdef void poincare_dists(double[:, :] y, double[:, :] out) nogil:
                     continue
                 out[i, j] = distance(y[i, 0], y[i, 1], y[j, 0], y[j, 1])
 
-def distance_grad_py(double[:] u, double[:] v, int ax):
-    return distance_grad(u[0], u[1], v[0], v[1], ax)
+def distance_grad_py(double[:] u, double[:] v):
+    cdef DTYPE_t[3] res
+    cdef DTYPE_t[3] us = [u[0], u[1], u[2]]
+    cdef DTYPE_t[3] vs = [v[0], v[1], v[2]]
+
+    distance_grad_q(us, vs, res)
+    return res
 
 def distance_py(double[:] u, double[:] v):
-    return distance(u[0], u[1], v[0], v[1],)
+    cdef DTYPE_t[3] us = [u[0], u[1], u[2]]
+    cdef DTYPE_t[3] vs = [v[0], v[1], v[2]]
+
+    return distance_q(us, vs)
 
 
 #######################################
