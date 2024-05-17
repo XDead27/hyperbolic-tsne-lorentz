@@ -9,7 +9,7 @@
 import numpy as np
 cimport numpy as np
 from libc.stdio cimport printf
-from libc.math cimport sqrt, log, acosh, cosh, cos, sin, M_PI, atan2, tanh, atanh, isnan, fabs, fmin, fmax
+from libc.math cimport sqrt, log, acosh, cosh, cos, sin, M_PI, atan2, tanh, atanh, isnan, fabs, fmin, fmax, sinh
 from libc.stdlib cimport malloc, free, realloc
 from cython.parallel cimport prange, parallel
 from libc.string cimport memcpy
@@ -136,6 +136,9 @@ cdef extern from "numpy/arrayobject.h":
 cdef DTYPE_t sq_norm(DTYPE_t x, DTYPE_t y) nogil:
     return x * x + y * y
 
+cdef DTYPE_t sq_norm_3d(DTYPE_t[3] x) nogil:
+    return x[0] * x[0] + x[1] * x[1] + x[2] * x[2]
+
 cdef void poincare_to_lorentz(DTYPE_t y1, DTYPE_t y2, DTYPE_t* result) nogil:
     cdef:
         DTYPE_t term = 1 - y1 * y1 - y2 * y2
@@ -167,10 +170,6 @@ cdef DTYPE_t lorentz_factor(DTYPE_t sq_n) nogil:
 
 cdef DTYPE_t minkowski_bilinear(DTYPE_t[3] lp1, DTYPE_t[3] lp2) nogil:
     return lp1[LORENTZ_X_1] * lp2[LORENTZ_X_1] + lp1[LORENTZ_X_2] * lp2[LORENTZ_X_2] - lp1[LORENTZ_T] * lp2[LORENTZ_T]
-
-# Distance function for the hyperboloid model
-cdef DTYPE_t distance_lorentz(DTYPE_t[3] lp1, DTYPE_t[3] lp2) nogil:
-    return acosh( - minkowski_bilinear(lp1, lp2))
 
 # Checks if value lies in the upper polynomial and is in range 0, 1
 cdef bint _check_dist_param_value(DTYPE_t val, DTYPE_t z0, DTYPE_t z_d) nogil:
@@ -878,6 +877,10 @@ cpdef DTYPE_t distance(DTYPE_t u0, DTYPE_t u1, DTYPE_t v0, DTYPE_t v1) nogil:
 
     return result
 
+# Distance function for the hyperboloid model
+cdef DTYPE_t distance_lorentz(DTYPE_t[3] lp1, DTYPE_t[3] lp2) nogil:
+    return acosh( - minkowski_bilinear(lp1, lp2))
+
 # Distance gradient on the poincare model
 cdef DTYPE_t distance_grad(DTYPE_t u0, DTYPE_t u1, DTYPE_t v0, DTYPE_t v1, int ax) nogil:
     if fabs(u0 - v0) <= EPSILON and fabs(u1 - v1) <= EPSILON:
@@ -904,6 +907,23 @@ cdef DTYPE_t distance_grad(DTYPE_t u0, DTYPE_t u1, DTYPE_t v0, DTYPE_t v1, int a
     else:
         return shared_scalar * (u_scalar * u1 - v_scalar * v1)
 
+# Distance gradient on the lorentz model, with respect to u 
+cdef void distance_grad_lorentz(DTYPE_t[3] u, DTYPE_t[3] v, DTYPE_t* res) nogil:
+    cdef:
+        DTYPE_t minkbil = minkowski_bilinear(u, v)
+        DTYPE_t scalar = - 1 / sqrt(minkbil * minkbil - 1)
+
+    for i in range(3):
+        res[i] = scalar * v[i]
+
+# Project the gradient on the tangent space at point p on the hyperboloid
+cdef void project_to_tangent_space(DTYPE_t[3] p, DTYPE_t[3] grad, DTYPE_t* res) nogil:
+    cdef DTYPE_t minkbil = minkowski_bilinear(p, grad)
+
+    res[0] = grad[0] + p[0] * minkbil
+    res[1] = grad[1] + p[1] * minkbil
+    res[2] = grad[2] + p[2] * minkbil
+
 cdef void exp_map_single(double* x, double* v, double* res) nogil:
     cdef double x_norm_sq, metric, v_norm, v_scalar
     cdef double* y = <double*> malloc(sizeof(double) * 2)
@@ -921,6 +941,16 @@ cdef void exp_map_single(double* x, double* v, double* res) nogil:
     mobius_addition(x, y, res)
     free(y)
 
+# Projects a vector from the tangent space back on the hyperboloid
+cdef void exp_map_single_lorentz(DTYPE_t[3] p, DTYPE_t[3] v, DTYPE_t* res) nogil:
+    cdef DTYPE_t norm = sqrt(minkowski_bilinear(v, v))
+    cdef DTYPE_t coshval = cosh(norm)
+    cdef DTYPE_t sinhval = sinh(norm)
+
+    for i in range(3):
+        res[i] = coshval * p[i] + sinhval * v[i] / norm
+
+#TODO: this method gets called outside
 cpdef void exp_map(double[:, :] x, double[:, :] v, double[:, :] out, int num_threads) nogil:
     cdef double* exp_map_res = <double*> malloc(sizeof(double) * 2)
 
@@ -929,6 +959,18 @@ cpdef void exp_map(double[:, :] x, double[:, :] v, double[:, :] out, int num_thr
 
         for j in range(2):
             out[i, j] = exp_map_res[j]
+
+    free(exp_map_res)
+
+# Applies exp_map_single_lorentz for all points in p and vectors in v
+cpdef void exp_map_lorentz(DTYPE_t[:, :] p, DTYPE_t[:, :] v, DTYPE_t[:, :] res, int num_threads) nogil:
+    cdef DTYPE_t* exp_map_res = <DTYPE_t*> malloc(sizeof(DTYPE_t) * 3)
+
+    for i in range(p.shape[0]):
+        exp_map_single_lorentz(&p[i, 0], &v[i, 0], exp_map_res)
+
+        for j in range(3):
+            res[i, j] = exp_map_res[j]
 
     free(exp_map_res)
 
@@ -972,6 +1014,15 @@ cdef void log_map_single(double* x, double* y, double* res) nogil:
 
     free(mobius_res)
 
+# Compute the logarithmic map on the hyperboloid #TODO: idk if this is actually right
+cdef void log_map_single_lorentz(DTYPE_t[3] p, DTYPE_t[3] q, DTYPE_t* res) nogil:
+    cdef DTYPE_t beta = - minkowski_bilinear(p, q)
+    cdef DTYPE_t mult = acosh(beta) / sqrt(beta * beta - 1)
+
+    for i in range(3):
+        res[i] = q[i] - beta * p[i]
+
+#TODO: This method gets called in an experiment
 cpdef void log_map(double[:, :] x, double[:, :] y, double[:, :] out, int num_threads) nogil:
     cdef double* log_map_res = <double*> malloc(sizeof(double) * 2)
 
@@ -983,6 +1034,19 @@ cpdef void log_map(double[:, :] x, double[:, :] y, double[:, :] out, int num_thr
 
     free(log_map_res)
 
+# Applies log_map_single_lorentz for every pair of points in x and y
+cpdef void log_map_lorentz(DTYPE_t[:, :] x, DTYPE_t[:, :] y, DTYPE_t[:, :] out, int num_threads) nogil:
+    cdef DTYPE_t* log_map_res = <DTYPE_t*> malloc(sizeof(DTYPE_t) * 2)
+
+    for i in range(x.shape[0]):
+        log_map_single_lorentz(&x[i, 0], &y[i, 0], log_map_res)
+
+        for j in range(3):
+            out[i, j] = log_map_res[j]
+
+    free(log_map_res)
+
+#TODO: this method gets called outside. check if needed
 cpdef void constrain(double[:, :] y, double[:, :] out, int num_threads) nogil:
     for i in range(y.shape[0]):
         point_norm = sqrt(y[i, 0] ** 2 + y[i, 1] ** 2)
