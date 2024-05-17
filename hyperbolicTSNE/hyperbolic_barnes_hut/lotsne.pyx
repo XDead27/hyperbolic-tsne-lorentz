@@ -136,9 +136,6 @@ cdef extern from "numpy/arrayobject.h":
 cdef DTYPE_t sq_norm(DTYPE_t x, DTYPE_t y) nogil:
     return x * x + y * y
 
-cdef DTYPE_t sq_norm_3d(DTYPE_t[3] x) nogil:
-    return x[0] * x[0] + x[1] * x[1] + x[2] * x[2]
-
 cdef void poincare_to_lorentz(DTYPE_t y1, DTYPE_t y2, DTYPE_t* result) nogil:
     cdef:
         DTYPE_t term = 1 - y1 * y1 - y2 * y2
@@ -333,26 +330,29 @@ cdef class _OcTree:
             return self._get_cell_ndarray()['is_leaf'][:self.cell_count]
 
     def build_tree(self, X):
-        """Build a tree from an array of points X."""
+        """
+        Build a tree from an array of points X.
+        X is Lorentz coordinates (X_1, X_2, X_T)
+        """
         cdef:
             int i
             DTYPE_t[3] pt
             DTYPE_t[3] min_bounds, max_bounds
 
         n_samples = X.shape[0]
-        LX = np.zeros((n_samples, 3))
+        # LX = np.zeros((n_samples, 3))
         
-        # Change points from Poincare to Lorentz
-        for i in range(n_samples):
-            poincare_to_lorentz(X[i, 0], X[i, 1], pt)
-            LX[i, LORENTZ_T] = pt[LORENTZ_T]
-            LX[i, LORENTZ_X_1] = pt[LORENTZ_X_1]
-            LX[i, LORENTZ_X_2] = pt[LORENTZ_X_2]
+        # # Change points from Poincare to Lorentz
+        # for i in range(n_samples):
+        #     poincare_to_lorentz(X[i, 0], X[i, 1], pt)
+        #     LX[i, LORENTZ_T] = pt[LORENTZ_T]
+        #     LX[i, LORENTZ_X_1] = pt[LORENTZ_X_1]
+        #     LX[i, LORENTZ_X_2] = pt[LORENTZ_X_2]
 
         capacity = 100
         self._resize(capacity)
-        m = np.min(LX, axis=0)
-        M = np.max(LX, axis=0)
+        m = np.min(X, axis=0)
+        M = np.max(X, axis=0)
         # Scale the maximum to get all points strictly in the tree bounding box
         # The 3 bounds are for positive, negative and small values
         M = np.maximum(M * (1. + 1e-3 * np.sign(M)), M + 1e-3)
@@ -370,7 +370,7 @@ cdef class _OcTree:
         # Insert all points
         for i in range(n_samples):
             for j in range(self.n_dimensions):
-                pt[j] = LX[i, j]
+                pt[j] = X[i, j]
 
             self.insert_point(pt, i)
 
@@ -600,7 +600,7 @@ cdef class _OcTree:
 
         self.cell_count += 1
 
-    cdef long summarize(self, DTYPE_t[2] point, DTYPE_t* results,
+    cdef long summarize(self, DTYPE_t[3] point, DTYPE_t* results,
                         float squared_theta=.5, SIZE_t cell_id=0, long idx=0
                         ) noexcept nogil:
         """Summarize the tree compared to a query point.
@@ -642,8 +642,7 @@ cdef class _OcTree:
             number of elements in the results array.
         """
         cdef:
-            int actual_dims = 2 # XXX: Modify later
-            int i, idx_d = idx + actual_dims 
+            int i, idx_d = idx + self.n_dimensions 
             bint duplicate = True
             DTYPE_t dist
             Cell* cell = &self.cells[cell_id]
@@ -652,21 +651,21 @@ cdef class _OcTree:
         # TODO: Either
         # (1) Change signature to receive Poincare point, then, for 
         #     each point in the tree, translate to Poincare model and
-        #     use distance_grad() (easy, not clean) (CHOSEN)
+        #     use distance_grad() (easy, not clean)
         # (2) Preserve signature, change both the argument point and all
         #     the ones contained in the tree to Poincare model and use
         #     distance_grad() (cleaner, but has to respect other constraints)
         # (3) (NON-PRIORITY) Preserve signature and use hyperboloid 
-        #     gradient and distance methods to summarize (cleaneast, hardest)
+        #     gradient and distance methods to summarize (cleaneast, hardest) (CHOSEN)
         
-        lorentz_to_poincare(cell.barycenter, poincare_barycenter)
+        # lorentz_to_poincare(cell.barycenter, poincare_barycenter)
 
         results[idx_d] = 0.
-        for i in range(actual_dims):
-            results[idx + i] = distance_grad_q(point, poincare_barycenter, i)
+        distance_grad_q(point, cell.barycenter, &results[idx])
+        for i in range(self.n_dimensions):
             duplicate &= fabs(results[idx + i]) <= EPSILON
 
-        dist = distance_q(point, poincare_barycenter)
+        dist = distance_q(point, cell.barycenter)
         results[idx_d] = dist * dist
 
         # Do not compute self interactions
@@ -681,7 +680,7 @@ cdef class _OcTree:
         if cell.is_leaf or (
                 (cell.squared_max_width / results[idx_d]) < squared_theta):
             results[idx_d + 1] = <DTYPE_t> cell.cumulative_size
-            return idx + actual_dims + 2
+            return idx + self.n_dimensions + 2
 
         else:
             # Recursively compute the summary in nodes
@@ -856,11 +855,11 @@ cdef class _OcTree:
 #################################################
 # NON-PRIORITY TODO: Change these to the Lorentz model distance and gradient
 cdef DTYPE_t distance_q(DTYPE_t* u, DTYPE_t* v) nogil:
-    return distance(u[0], u[1], v[0], v[1])
+    return distance_lorentz(u, v)
 
 # Distance gradient on the poincare model (takes two pointers as arguments)
-cdef DTYPE_t distance_grad_q(DTYPE_t* u, DTYPE_t* v, int ax) nogil:
-    return distance_grad(u[0], u[1], v[0], v[1], ax)
+cdef void distance_grad_q(DTYPE_t* u, DTYPE_t* v, DTYPE_t* res) nogil:
+    distance_grad_lorentz(u, v, res)
 
 # Pointwise distance on the poincare model
 cpdef DTYPE_t distance(DTYPE_t u0, DTYPE_t u1, DTYPE_t v0, DTYPE_t v1) nogil:
@@ -1036,7 +1035,7 @@ cpdef void log_map(double[:, :] x, double[:, :] y, double[:, :] out, int num_thr
 
 # Applies log_map_single_lorentz for every pair of points in x and y
 cpdef void log_map_lorentz(DTYPE_t[:, :] x, DTYPE_t[:, :] y, DTYPE_t[:, :] out, int num_threads) nogil:
-    cdef DTYPE_t* log_map_res = <DTYPE_t*> malloc(sizeof(DTYPE_t) * 2)
+    cdef DTYPE_t* log_map_res = <DTYPE_t*> malloc(sizeof(DTYPE_t) * 3)
 
     for i in range(x.shape[0]):
         log_map_single_lorentz(&x[i, 0], &y[i, 0], log_map_res)
@@ -1097,13 +1096,14 @@ cdef double exact_compute_gradient(float[:] timings,
         long i, coord
         int ax
         long n_samples = pos_reference.shape[0]
-        int n_dimensions = 2 # XXX: Magic number
+        int n_dimensions = pos_reference.shape[1]
         double sQ
         double error
         clock_t t1 = 0, t2 = 0
 
     cdef double* neg_f = <double*> malloc(sizeof(double) * n_samples * n_dimensions)
     cdef double* pos_f = <double*> malloc(sizeof(double) * n_samples * n_dimensions)
+    cdef DTYPE_t* tot_force_interm = <DTYPE_t*> malloc(sizeof(DTYPE_t) * 3)
 
     if TAKE_TIMING:
         t1 = clock()
@@ -1128,7 +1128,8 @@ cdef double exact_compute_gradient(float[:] timings,
     for i in prange(start, n_samples, nogil=True, num_threads=num_threads, schedule='static'):
         for ax in range(n_dimensions):
             coord = i * n_dimensions + ax
-            tot_force[i, ax] = pos_f[coord] - (neg_f[coord] / sQ)
+            tot_force_interm[ax] = pos_f[coord] - (neg_f[coord] / sQ)
+        project_to_tangent_space(&pos_reference[i, 0], tot_force_interm, &tot_force[i, 0])
 
     free(neg_f)
     free(pos_f)
@@ -1149,7 +1150,7 @@ cdef double exact_compute_gradient_negative(double[:, :] pos_reference,
                                       int num_threads) nogil:
     cdef:
         int ax
-        int n_dimensions = 2 # XXX: Magic number
+        int n_dimensions = pos_reference.shape[1]
         int offset = n_dimensions + 2
         long i, j, k, idx
         long n = stop - start
@@ -1159,6 +1160,7 @@ cdef double exact_compute_gradient_negative(double[:, :] pos_reference,
         double qijZ, sum_Q = 0.0
         long n_samples = indptr.shape[0] - 1
         double dij, qij, dij_sq
+        DTYPE_t[3] neg_f_axes #XXX: n dims
 
     with nogil, parallel(num_threads=num_threads):
         for i in prange(start, n_samples, schedule='static'):
@@ -1169,7 +1171,7 @@ cdef double exact_compute_gradient_negative(double[:, :] pos_reference,
             for j in range(start, n_samples):
                 if i == j:
                     continue
-                dij = distance(pos_reference[i, 0], pos_reference[i, 1], pos_reference[j, 0], pos_reference[j, 1])
+                dij = distance_q(&pos_reference[i, 0], &pos_reference[j, 0])
                 dij_sq = dij * dij
 
                 qij = 1. / (1. + dij_sq)
@@ -1182,8 +1184,9 @@ cdef double exact_compute_gradient_negative(double[:, :] pos_reference,
                     mult = qij * qij
 
                 sum_Q += qij
+                distance_grad_q(&pos_reference[i, 0], &pos_reference[j, 0], neg_f_axes)
                 for ax in range(n_dimensions):
-                    neg_f[i * n_dimensions + ax] += mult * distance_grad(pos_reference[i, 0], pos_reference[i, 1], pos_reference[j, 0], pos_reference[j, 1], ax)
+                    neg_f[i * n_dimensions + ax] += mult * neg_f_axes[ax]
 
     # Put sum_Q to machine EPSILON to avoid divisions by 0
     sum_Q = max(sum_Q, FLOAT64_EPS)
@@ -1211,9 +1214,10 @@ cdef double compute_gradient(float[:] timings,
         long i, coord
         int ax
         long n_samples = pos_reference.shape[0]
-        int n_dimensions = 2 # XXX: Magic number
+        int n_dimensions = pos_reference.shape[1]
         double sQ
         double error
+        DTYPE_t[3] tot_force_interm
         clock_t t1 = 0, t2 = 0
 
     cdef double* neg_f = <double*> malloc(sizeof(double) * n_samples * n_dimensions)
@@ -1221,8 +1225,7 @@ cdef double compute_gradient(float[:] timings,
 
     if TAKE_TIMING:
         t1 = clock()
-    # sQ = compute_gradient_negative(pos_reference, neighbors, indptr, neg_f, qt, dof, theta, start,
-    #                                stop, num_threads)
+
     sQ = compute_gradient_negative(pos_reference, neg_f, qt, dof, theta, start,
                                    stop, num_threads)
     if TAKE_TIMING:
@@ -1243,7 +1246,9 @@ cdef double compute_gradient(float[:] timings,
     for i in prange(start, n_samples, nogil=True, num_threads=num_threads, schedule='static'):
         for ax in range(n_dimensions):
             coord = i * n_dimensions + ax
-            tot_force[i, ax] = pos_f[coord] - (neg_f[coord] / sQ)
+            tot_force_interm[ax] = pos_f[coord] - (neg_f[coord] / sQ)
+
+        project_to_tangent_space(&pos_reference[i, 0], tot_force_interm, &tot_force[i, 0])
 
     free(neg_f)
     free(pos_f)
@@ -1272,6 +1277,7 @@ cdef double compute_gradient_positive(double[:] val_P,
         long n_samples = indptr.shape[0] - 1
         double C = 0.0
         double dij, qij, pij, mult, dij_sq
+        DTYPE_t[3] dist_grad_pos
 
     with nogil, parallel(num_threads=num_threads):
         for i in prange(start, n_samples, schedule='static'):
@@ -1283,7 +1289,7 @@ cdef double compute_gradient_positive(double[:] val_P,
                 j = neighbors[k]
                 pij = val_P[k]
 
-                dij = distance(pos_reference[i, 0], pos_reference[i, 1], pos_reference[j, 0], pos_reference[j, 1])
+                dij = distance_q(&pos_reference[i, 0], &pos_reference[j, 0])
                 dij_sq = dij * dij
 
                 qij = 1. / (1. + dij_sq)
@@ -1299,8 +1305,9 @@ cdef double compute_gradient_positive(double[:] val_P,
                 if compute_error:
                     qij = qij / sum_Q
                     C += pij * log(max(pij, FLOAT32_TINY) / max(qij, FLOAT32_TINY))
+                distance_grad_q(&pos_reference[i, 0], &pos_reference[j, 0], dist_grad_pos)
                 for ax in range(n_dimensions):
-                    pos_f[i * n_dimensions + ax] += mult * distance_grad(pos_reference[i, 0], pos_reference[i, 1], pos_reference[j, 0], pos_reference[j, 1], ax)
+                    pos_f[i * n_dimensions + ax] += mult * dist_grad_pos[ax]
     return C
 
 cdef double compute_gradient_negative(double[:, :] pos_reference,
@@ -1315,7 +1322,7 @@ cdef double compute_gradient_negative(double[:, :] pos_reference,
         stop = pos_reference.shape[0]
     cdef:
         int ax
-        int n_dimensions = 2 # XXX: Magic number
+        int n_dimensions = pos_reference.shape[1]
         int offset = n_dimensions + 2
         long i, j, idx
         long n = stop - start
@@ -1396,7 +1403,7 @@ def gradient(float[:] timings,
              bint grad_fix=0):
     cdef double C
     cdef int n
-    cdef _OcTree qt = _OcTree(pos_output.shape[1] + 1, verbose)
+    cdef _OcTree qt = _OcTree(pos_output.shape[1], verbose)
     cdef clock_t t1 = 0, t2 = 0
 
     global AREA_SPLIT
