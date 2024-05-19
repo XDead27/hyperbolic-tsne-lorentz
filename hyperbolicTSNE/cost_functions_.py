@@ -376,9 +376,12 @@ class HyperbolicKL:
             raise RuntimeError("Model " + model + " does not exist!")
 
         grad = grad.ravel()
-        grad *= 4
+        if model == "poincare":
+            grad *= 4
 
         if save_timings:
             self.results.append(timings)
 
+        print(f'[cost_functions.py][grad]: {grad}')
+        print(f'[cost_functions.py][error]: {error}')
         return error, grad

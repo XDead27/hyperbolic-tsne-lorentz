@@ -1,9 +1,11 @@
 """ Methods for initializing embedding.
 """
+import ctypes
 import numpy as np
 from sklearn.decomposition import PCA
 
 from sklearn.utils import check_random_state
+from .hyperbolic_barnes_hut.lotsne import poincare_to_lorentz
 
 
 def initialization(n_samples, n_components, X=None, method="random", random_state=None):
@@ -45,3 +47,20 @@ def initialization(n_samples, n_components, X=None, method="random", random_stat
         raise ValueError(f"Method of initialization `{method}` not supported. init' must be 'pca', 'random', or a numpy array")
 
     return X_embedded
+
+def to_lorentz(X):
+    n_components = X.shape[1]
+    n_samples = X.shape[0]
+
+    if n_components != 2:
+        raise ValueError("Data has to have exactly 2 components!")
+    
+    X_lorentz = np.zeros([n_samples, n_components + 1], dtype=ctypes.c_double)
+    X_li = np.zeros([n_components + 1], dtype=ctypes.c_double)
+
+    for i in range(n_samples):
+        poincare_to_lorentz(X[i, 0], X[i, 1], X_li)
+        X_lorentz[i, :] = X_li.copy()
+
+    return X_lorentz
+

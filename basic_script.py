@@ -4,12 +4,14 @@ import traceback
 from hyperbolicTSNE.util import find_last_embedding
 from hyperbolicTSNE.visualization import plot_poincare, animate
 from hyperbolicTSNE import load_data, Datasets, SequentialOptimizer, initialization, HyperbolicTSNE
+from hyperbolicTSNE.initializations_ import to_lorentz
 
 data_home = "datasets"
 log_path = "temp/poincare/"  # path for saving embedding snapshots
 
-model = "poincare"
-# model = "lorentz"
+# model = "poincare"
+model = "lorentz"
+n_components = 2 if model == "poincare" else 3
 only_animate = False
 seed = 42
 dataset = Datasets.MNIST  # the Datasets handler provides access to several data sets used throughout the repository
@@ -45,8 +47,6 @@ opt_config = dict(
     n_iter_check=10,  # Needed for early stopping criterion
     size_tol=0.999,  # Size of the embedding to be used as early stopping criterion
     hyperbolic_model=model,
-    grad_scale_fix=False,
-    grad_fix=False,
 )
 
 opt_params = SequentialOptimizer.sequence_poincare(**opt_config)
@@ -75,11 +75,15 @@ X_embedded = initialization(
     method="pca"
 )
 
+if model == "lorentz":
+    X_embedded = to_lorentz(X_embedded)
+
+# print(X_embedded)
 
 # Initialize the embedder
 htsne = HyperbolicTSNE(
     init=X_embedded, 
-    n_components=2, 
+    n_components=n_components, 
     metric="precomputed", 
     verbose=True, 
     opt_method=SequentialOptimizer, 

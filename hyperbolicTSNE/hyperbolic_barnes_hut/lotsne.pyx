@@ -14,7 +14,7 @@ from libc.stdlib cimport malloc, free, realloc
 from cython.parallel cimport prange, parallel
 from libc.string cimport memcpy
 from libc.stdint cimport SIZE_MAX
-from libc.math cimport isnan
+from libc.math cimport isnan, isinf
 
 np.import_array()
 
@@ -136,6 +136,21 @@ cdef extern from "numpy/arrayobject.h":
 cdef DTYPE_t sq_norm(DTYPE_t x, DTYPE_t y) nogil:
     return x * x + y * y
 
+cdef DTYPE_t sq_norm_3d(DTYPE_t[3] x) nogil:
+    return x[0] * x[0] + x[1] * x[1] + x[2] * x[2]
+
+cpdef void poincare_to_lorentz(DTYPE_t y1, DTYPE_t y2, DTYPE_t[:] result) nogil:
+    cdef:
+        DTYPE_t term = 1 - y1 * y1 - y2 * y2
+
+    result[LORENTZ_T] = 2 / term - 1
+    result[LORENTZ_X_1] = 2 * y1 / term
+    result[LORENTZ_X_2] = 2 * y2 / term
+
+cpdef void lorentz_to_poincare(DTYPE_t[:] lp, DTYPE_t[:] result) nogil:
+    result[0] = lp[LORENTZ_X_1] / (1 + lp[LORENTZ_T])
+    result[1] = lp[LORENTZ_X_2] / (1 + lp[LORENTZ_T])
+
 cdef void lorentz_to_klein(DTYPE_t* lp, DTYPE_t* result) nogil:
     result[0] = lp[LORENTZ_X_1] / lp[LORENTZ_T]
     result[1] = lp[LORENTZ_X_2] / lp[LORENTZ_T]
@@ -221,6 +236,10 @@ cdef DTYPE_t get_max_dist_hyperboloid_sect(DTYPE_t[3] la, DTYPE_t[3] lb) nogil:
     cdef DTYPE_t max_dist = 0.0, dist
     cdef int[24] cnts
 
+
+    # XXX: Debug
+    # printf("A: %f %f %f\t", la[0], la[1], la[2])
+    # printf("B: %f %f %f\n", lb[0], lb[1], lb[2])
 
     # Setup points (too lazy to think of algorithm)
     _copy_point(la, points[0]) # min bound
@@ -328,19 +347,12 @@ cdef class _OcTree:
             DTYPE_t[3] min_bounds, max_bounds
 
         n_samples = X.shape[0]
-        # LX = np.zeros((n_samples, 3))
         
-        # # Change points from Poincare to Lorentz
-        # for i in range(n_samples):
-        #     poincare_to_lorentz(X[i, 0], X[i, 1], pt)
-        #     LX[i, LORENTZ_T] = pt[LORENTZ_T]
-        #     LX[i, LORENTZ_X_1] = pt[LORENTZ_X_1]
-        #     LX[i, LORENTZ_X_2] = pt[LORENTZ_X_2]
-
         capacity = 100
         self._resize(capacity)
         m = np.min(X, axis=0)
         M = np.max(X, axis=0)
+
         # Scale the maximum to get all points strictly in the tree bounding box
         # The 3 bounds are for positive, negative and small values
         M = np.maximum(M * (1. + 1e-3 * np.sign(M)), M + 1e-3)
@@ -655,6 +667,16 @@ cdef class _OcTree:
         dist = distance_q(point, cell.barycenter)
         results[idx_d] = dist * dist
 
+        #XXX: Debug
+        if isnan(dist):
+            printf("[A}")
+        if isnan(point[0]):
+            printf("[B}")
+        if isnan(cell.barycenter[0]):
+            printf("[C}")
+        if isnan(results[idx]):
+            printf("[D}")
+
         # Do not compute self interactions
         if duplicate and cell.is_leaf:
             return idx
@@ -867,16 +889,24 @@ cpdef DTYPE_t distance(DTYPE_t u0, DTYPE_t u1, DTYPE_t v0, DTYPE_t v1) nogil:
 cpdef DTYPE_t distance_lorentz(DTYPE_t p0, DTYPE_t p1, DTYPE_t p2, DTYPE_t q0, DTYPE_t q1, DTYPE_t q2) nogil:
     cdef DTYPE_t[3] lp1
     cdef DTYPE_t[3] lp2
+    cdef DTYPE_t res1
     lp1[0] = p0; lp1[1] = p1; lp1[2] = p2
     lp2[0] = q0; lp2[1] = q1; lp2[2] = q2
 
-    return acosh( - minkowski_bilinear(lp1, lp2))
+    res1 = -minkowski_bilinear(lp1, lp2)
+    if res1 < 1.:
+        res1 = 1.
+
+    return acosh(res1)
 
 # Distance gradient on the lorentz model, with respect to u 
 cdef void distance_grad_lorentz(DTYPE_t[3] u, DTYPE_t[3] v, DTYPE_t* res) nogil:
     cdef:
         DTYPE_t minkbil = minkowski_bilinear(u, v)
         DTYPE_t scalar = - 1 / sqrt(minkbil * minkbil - 1)
+    
+    if minkbil * minkbil <= 1.:
+        scalar = 0.
 
     for i in range(3):
         res[i] = scalar * v[i]
@@ -891,15 +921,33 @@ cdef void project_to_tangent_space(DTYPE_t[3] p, DTYPE_t[3] grad, DTYPE_t* res) 
 
 # Projects a vector from the tangent space back on the hyperboloid
 cdef void exp_map_single_lorentz(DTYPE_t[3] p, DTYPE_t[3] v, DTYPE_t* res) nogil:
-    cdef DTYPE_t norm = sqrt(minkowski_bilinear(v, v))
-    cdef DTYPE_t coshval = cosh(norm)
-    cdef DTYPE_t sinhval = sinh(norm)
+    cdef DTYPE_t mb = - minkowski_bilinear(v, v)
+    # cdef DTYPE_t mb = sq_norm_3d(v)
+    cdef DTYPE_t norm
+    cdef DTYPE_t coshval
+    cdef DTYPE_t sinhval
+
+    if mb < 0.:
+        norm = 0.
+    else:
+        norm = sqrt(mb)
+
+    if norm != 0:
+        coshval = cosh(norm)
+        sinhval = sinh(norm)
+    else:
+        coshval = 1.
+        sinhval = 1.
+        norm = 1.
 
     for i in range(3):
         res[i] = coshval * p[i] + sinhval * v[i] / norm
+        if isnan(res[i]) or isinf(res[i]):
+            printf("point: %f %f %f\t grad: %f %f %f\n", p[0], p[1], p[2], v[0], v[1], v[2])
+            printf("s %f\t c %f\t n %f\t mb %f\n", sinhval, coshval, norm, mb)
 
 # Applies exp_map_single_lorentz for all points in p and vectors in v
-cpdef void exp_map_lorentz(DTYPE_t[:, :] p, DTYPE_t[:, :] v, DTYPE_t[:, :] res, int num_threads) nogil:
+cpdef void exp_map(DTYPE_t[:, :] p, DTYPE_t[:, :] v, DTYPE_t[:, :] res, int num_threads) nogil:
     cdef DTYPE_t* exp_map_res = <DTYPE_t*> malloc(sizeof(DTYPE_t) * 3)
 
     for i in range(p.shape[0]):
@@ -915,11 +963,14 @@ cdef void log_map_single_lorentz(DTYPE_t[3] p, DTYPE_t[3] q, DTYPE_t* res) nogil
     cdef DTYPE_t beta = - minkowski_bilinear(p, q)
     cdef DTYPE_t mult = acosh(beta) / sqrt(beta * beta - 1)
 
+    if beta <= 1.:
+        mult = 1.
+
     for i in range(3):
         res[i] = q[i] - beta * p[i]
 
 # Applies log_map_single_lorentz for every pair of points in x and y
-cpdef void log_map_lorentz(DTYPE_t[:, :] x, DTYPE_t[:, :] y, DTYPE_t[:, :] out, int num_threads) nogil:
+cpdef void log_map(DTYPE_t[:, :] x, DTYPE_t[:, :] y, DTYPE_t[:, :] out, int num_threads) nogil:
     cdef DTYPE_t* log_map_res = <DTYPE_t*> malloc(sizeof(DTYPE_t) * 3)
 
     for i in range(x.shape[0]):
@@ -929,17 +980,6 @@ cpdef void log_map_lorentz(DTYPE_t[:, :] x, DTYPE_t[:, :] y, DTYPE_t[:, :] out, 
             out[i, j] = log_map_res[j]
 
     free(log_map_res)
-
-cpdef void poincare_dists(double[:, :] y, double[:, :] out) nogil:
-    cdef:
-        long i, j
-
-    with nogil, parallel(num_threads=12):
-        for i in prange(0, y.shape[0], schedule='static'):
-            for j in range(0, y.shape[0]):
-                if i == j:
-                    continue
-                out[i, j] = distance(y[i, 0], y[i, 1], y[j, 0], y[j, 1])
 
 def distance_grad_py(double[:] u, double[:] v):
     cdef DTYPE_t[3] res
@@ -1114,6 +1154,10 @@ cdef double compute_gradient(float[:] timings,
         t2 = clock()
         timings[2] = ((float) (t2 - t1)) / CLOCKS_PER_SEC
 
+    # XXX: Debug
+    printf("[compute_gradient][neg_f[0]]: %f %f %f\n", neg_f[0], neg_f[1], neg_f[2])
+    printf("[compute_gradient][sQ]: %f\n", sQ)
+
     if TAKE_TIMING:
         t1 = clock()
 
@@ -1131,7 +1175,11 @@ cdef double compute_gradient(float[:] timings,
             tot_force_interm[ax] = pos_f[coord] - (neg_f[coord] / sQ)
 
         project_to_tangent_space(&pos_reference[i, 0], tot_force_interm, &tot_force[i, 0])
-
+    
+    # XXX: Debug
+    printf("[compute_gradient][pos_f[0]]: %f %f %f\n", pos_f[0], pos_f[1], pos_f[2])
+    printf("[compute_gradient][tot_force[0]]: %f %f %f\n", tot_force[0][0], tot_force[0][1], tot_force[0][2])
+    
     free(neg_f)
     free(pos_f)
     return error
@@ -1243,6 +1291,7 @@ cdef double compute_gradient_negative(double[:, :] pos_reference,
                 size = summary[j * offset + n_dimensions + 1]
                 qijZ = 1. / (1. + dist2s)  # 1/(1+dist)
 
+                
                 sum_Q += size * qijZ   # size of the node * q
 
                 if GRAD_FIX:
@@ -1251,6 +1300,10 @@ cdef double compute_gradient_negative(double[:, :] pos_reference,
                 else:
                     # Old Solution
                     mult = size * qijZ * qijZ
+                
+                #XXX: Debug
+                if isnan(mult):
+                    printf("[compute_gradient_negative][dist2s]: %f\n", dist2s)
 
                 for ax in range(n_dimensions):
                     neg_force[ax] += mult * summary[j * offset + ax]

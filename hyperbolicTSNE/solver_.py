@@ -21,6 +21,23 @@ from .hyperbolic_barnes_hut import lotsne
 MACHINE_EPSILON = np.finfo(np.double).eps
 
 
+# XXX: Debug
+def check_is_inf_nan(x):
+    if np.isnan(x).any():
+        raise ValueError("NAN detected!")
+    if np.isinf(x).any():
+        raise ValueError("INF detected!")
+
+def check_on_hyperboloid(x):
+    if len(x.shape) != 2 or x.shape[1] != 3:
+        x = x.reshape(-1, 3)
+
+    for y in x:
+        sm = y[2] * y[2] - y[0] * y[0] - y[1] * y[1] - 1
+        if sm > 1.0e-7:
+            raise ValueError(f"y: {y}, sum: {sm}")
+
+
 def log_iteration(logging_dict, logging_key, it, y, n_samples, n_components,
                   cf=None, cf_params=None, cf_val=None, grad=None, grad_norm=None, log_arrays=False,
                   log_arrays_ids=None, hyperbolic_model="poincare"):
@@ -247,7 +264,14 @@ def gradient_descent(
         # only compute the error when needed
         compute_error = check_convergence or check_threshold or i == n_iter - 1
 
+        # XXX: Debug
+        print("[solver.py] Computing gradient...")
+        print(f"[solver.py][before obj_grad] y: {y}")
+        check_is_inf_nan(y)
+        check_on_hyperboloid(y)
+
         if compute_error or logging:  # TODO: add different levels of logging to avoid bottlenecks
+            print("[solver.py][gradient] Computing cf.obj_grad...")
             error, grad = cf.obj_grad(hyperbolic_model, y, **cf_params)
 
             if isinstance(cf, HyperbolicKL) and grad_scale_fix and hyperbolic_model == "poincare":
@@ -255,10 +279,16 @@ def gradient_descent(
                         ** 2) ** 2)[:, np.newaxis] * grad.reshape(n_samples, 2) / 4
                 grad = grad.flatten()
 
+            print("[solver.py][gradient] Computing norm...")
             grad_norm = linalg.norm(grad)
         else:
             grad = cf.grad(hyperbolic_model, y, **cf_params)
             grad_norm = linalg.norm(grad)
+
+        # XXX: Debug
+        print("[solver.py] Applying exponential map...")
+        print(f'[solver.py][before exp_map] y:\n {y}')
+        check_is_inf_nan(y)
 
         # Perform the actual gradient descent step
         if isinstance(cf, HyperbolicKL):
@@ -273,6 +303,12 @@ def gradient_descent(
                              res,
                              cf.params["params"]["num_threads"])
                 y = res.ravel()
+                
+                # XXX: Debug
+                print(f'[solver.py][after exp_map] y: {y}')
+                check_is_inf_nan(y)
+                check_on_hyperboloid(y)
+
             else:
                 inc = update * grad < 0.0
                 dec = np.invert(inc)
@@ -290,12 +326,21 @@ def gradient_descent(
                              res_exp,
                              cf.params["params"]["num_threads"])
 
+                # XXX: Debug
+                print(f'[solver.py][after exp_map] y: {res_exp}')
+                check_is_inf_nan(res_exp)
+                check_on_hyperboloid(res_exp)
+
                 res_log = np.empty((n_samples, n_components), dtype=ctypes.c_double)
                 tsne_impl.log_map(res_exp,
                              y.reshape(n_samples, n_components).astype(ctypes.c_double),
                              res_log,
                              cf.params["params"]["num_threads"])
                 y = res_exp.ravel()
+
+                # XXX: Debug
+                print(f'[solver.py][after log_map] y: {res_log}')
+                check_is_inf_nan(res_log)
 
                 update = res_log.ravel() * -1
 
@@ -321,6 +366,9 @@ def gradient_descent(
         pbar.set_description(
             f"Gradient Descent error: {error:.5f} grad_norm: {grad_norm:.5e}")
 
+        # XXX: Debug
+        print(f'[solver.py][exp_map] y: {y}')
+        print("[solver.py] Performing rescale (?)...")
         # If a rescale value has been specified, rescale the embedding now to have the bounding box fit the given value. 
         # TODO: ?
         if rescale is not None and i % n_iter_rescale == 0:
