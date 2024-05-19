@@ -32,11 +32,7 @@ def check_on_hyperboloid(x):
     if len(x.shape) != 2 or x.shape[1] != 3:
         x = x.reshape(-1, 3)
 
-    for y in x:
-        sm = y[2] * y[2] - y[0] * y[0] - y[1] * y[1] - 1
-        if sm > 1.0e-7:
-            raise ValueError(f"y: {y}, sum: {sm}")
-
+    lotsne.check_on_hyperboloid_all(x)
 
 def log_iteration(logging_dict, logging_key, it, y, n_samples, n_components,
                   cf=None, cf_params=None, cf_val=None, grad=None, grad_norm=None, log_arrays=False,
@@ -265,13 +261,11 @@ def gradient_descent(
         compute_error = check_convergence or check_threshold or i == n_iter - 1
 
         # XXX: Debug
-        print("[solver.py] Computing gradient...")
         print(f"[solver.py][before obj_grad] y: {y}")
         check_is_inf_nan(y)
         check_on_hyperboloid(y)
 
         if compute_error or logging:  # TODO: add different levels of logging to avoid bottlenecks
-            print("[solver.py][gradient] Computing cf.obj_grad...")
             error, grad = cf.obj_grad(hyperbolic_model, y, **cf_params)
 
             if isinstance(cf, HyperbolicKL) and grad_scale_fix and hyperbolic_model == "poincare":
@@ -279,8 +273,9 @@ def gradient_descent(
                         ** 2) ** 2)[:, np.newaxis] * grad.reshape(n_samples, 2) / 4
                 grad = grad.flatten()
 
-            print("[solver.py][gradient] Computing norm...")
             grad_norm = linalg.norm(grad)
+            print(f'[solver.py][grad] {grad}')
+            print(f'[solver.py][grad_norm] {grad_norm}')
         else:
             grad = cf.grad(hyperbolic_model, y, **cf_params)
             grad_norm = linalg.norm(grad)
@@ -289,6 +284,7 @@ def gradient_descent(
         print("[solver.py] Applying exponential map...")
         print(f'[solver.py][before exp_map] y:\n {y}')
         check_is_inf_nan(y)
+        check_on_hyperboloid(y)
 
         # Perform the actual gradient descent step
         if isinstance(cf, HyperbolicKL):

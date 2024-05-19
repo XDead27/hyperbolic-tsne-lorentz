@@ -139,6 +139,23 @@ cdef DTYPE_t sq_norm(DTYPE_t x, DTYPE_t y) nogil:
 cdef DTYPE_t sq_norm_3d(DTYPE_t[3] x) nogil:
     return x[0] * x[0] + x[1] * x[1] + x[2] * x[2]
 
+cdef int check_on_hyperboloid(DTYPE_t[3] p) except -1 nogil:
+    cdef DTYPE_t sm = p[LORENTZ_T] * p[LORENTZ_T] - p[LORENTZ_X_1] * p[LORENTZ_X_1] - p[LORENTZ_X_2] * p[LORENTZ_X_2] - 1
+
+    if sm > EPSILON:
+        with gil:
+            raise ValueError(f'p: {p[0]} {p[1]} {p[2]}\nsm: {sm}')
+
+cpdef int check_on_hyperboloid_all(DTYPE_t[:,:] ps) except -1 nogil:
+    cdef DTYPE_t[3] p
+    cdef SIZE_t n_samples = ps.shape[0]
+
+    for i in range(n_samples):
+        for j in range(3):
+            p[j] = ps[i, j]
+
+        check_on_hyperboloid(p)
+
 cpdef void poincare_to_lorentz(DTYPE_t y1, DTYPE_t y2, DTYPE_t[:] result) nogil:
     cdef:
         DTYPE_t term = 1 - y1 * y1 - y2 * y2
@@ -870,23 +887,11 @@ cdef DTYPE_t distance_q(DTYPE_t* u, DTYPE_t* v) nogil:
 cdef void distance_grad_q(DTYPE_t[3] u, DTYPE_t[3] v, DTYPE_t* res) nogil:
     distance_grad_lorentz(u, v, res)
 
-# Pointwise distance on the poincare model
-cpdef DTYPE_t distance(DTYPE_t u0, DTYPE_t u1, DTYPE_t v0, DTYPE_t v1) nogil:
-    if fabs(u0 - v0) <= EPSILON and fabs(u1 - v1) <= EPSILON:
-        return 0.
-
-    cdef:
-        DTYPE_t uv2 = ((u0 - v0) * (u0 - v0)) + ((u1 - v1) * (u1 - v1))
-        DTYPE_t u_sq = clamp(u0 * u0 + u1 * u1, 0, BOUNDARY)
-        DTYPE_t v_sq = clamp(v0 * v0 + v1 * v1, 0, BOUNDARY)
-        DTYPE_t alpha = 1. - u_sq
-        DTYPE_t beta = 1. - v_sq
-        DTYPE_t result = acosh( 1. + 2. * uv2 / ( alpha * beta ) )
-
-    return result
-
 # Distance function for the hyperboloid model
 cpdef DTYPE_t distance_lorentz(DTYPE_t p0, DTYPE_t p1, DTYPE_t p2, DTYPE_t q0, DTYPE_t q1, DTYPE_t q2) nogil:
+    if fabs(p0 - q0) <= EPSILON and fabs(p1 - q1) <= EPSILON:
+        return 0.
+
     cdef DTYPE_t[3] lp1
     cdef DTYPE_t[3] lp2
     cdef DTYPE_t res1
@@ -901,11 +906,16 @@ cpdef DTYPE_t distance_lorentz(DTYPE_t p0, DTYPE_t p1, DTYPE_t p2, DTYPE_t q0, D
 
 # Distance gradient on the lorentz model, with respect to u 
 cdef void distance_grad_lorentz(DTYPE_t[3] u, DTYPE_t[3] v, DTYPE_t* res) nogil:
+    if fabs(u[LORENTZ_X_1] - v[LORENTZ_X_1]) <= EPSILON and fabs(u[LORENTZ_X_2] - v[LORENTZ_X_2]) <= EPSILON:
+        for i in range(3):
+            res[i] = 0.
+        return
+
     cdef:
         DTYPE_t minkbil = minkowski_bilinear(u, v)
         DTYPE_t scalar = - 1 / sqrt(minkbil * minkbil - 1)
     
-    if minkbil * minkbil <= 1.:
+    if fabs(minkbil * minkbil - 1.) <= EPSILON:
         scalar = 0.
 
     for i in range(3):
@@ -918,36 +928,43 @@ cdef void project_to_tangent_space(DTYPE_t[3] p, DTYPE_t[3] grad, DTYPE_t* res) 
     res[0] = grad[0] + p[0] * minkbil
     res[1] = grad[1] + p[1] * minkbil
     res[2] = grad[2] + p[2] * minkbil
+    # XXX: Debug
+    if fabs(minkowski_bilinear(p, res)) > EPSILON:
+        printf("[project][point] %f %f %f\n", p[0], p[1], p[2])
+        printf("[project][minkbil] %f\n", minkbil)
+        printf("[project] %f %f %f -> %f %f %f\n", grad[0], grad[1], grad[2], res[0], res[1], res[2])
 
 # Projects a vector from the tangent space back on the hyperboloid
-cdef void exp_map_single_lorentz(DTYPE_t[3] p, DTYPE_t[3] v, DTYPE_t* res) nogil:
-    cdef DTYPE_t mb = - minkowski_bilinear(v, v)
-    # cdef DTYPE_t mb = sq_norm_3d(v)
+cdef int exp_map_single_lorentz(DTYPE_t[3] p, DTYPE_t[3] v, DTYPE_t* res) except -1 nogil:
+    cdef DTYPE_t vn = minkowski_bilinear(v, v)
+    # cdef DTYPE_t vn = sq_norm_3d(v)
     cdef DTYPE_t norm
     cdef DTYPE_t coshval
     cdef DTYPE_t sinhval
 
-    if mb < 0.:
-        norm = 0.
-    else:
-        norm = sqrt(mb)
+    norm = sqrt(vn)
 
     if norm != 0:
         coshval = cosh(norm)
         sinhval = sinh(norm)
     else:
         coshval = 1.
-        sinhval = 1.
+        sinhval = 0.
         norm = 1.
 
     for i in range(3):
         res[i] = coshval * p[i] + sinhval * v[i] / norm
+
         if isnan(res[i]) or isinf(res[i]):
-            printf("point: %f %f %f\t grad: %f %f %f\n", p[0], p[1], p[2], v[0], v[1], v[2])
-            printf("s %f\t c %f\t n %f\t mb %f\n", sinhval, coshval, norm, mb)
+            printf("point: %f %f %f\t grad: %e %e %e\n", p[0], p[1], p[2], v[0], v[1], v[2])
+            printf("s %f\t c %f\t n %f\t mb %f\n", sinhval, coshval, norm, vn)
+            with gil:
+                raise ValueError()
+
+    check_on_hyperboloid(res) # Sanity check
 
 # Applies exp_map_single_lorentz for all points in p and vectors in v
-cpdef void exp_map(DTYPE_t[:, :] p, DTYPE_t[:, :] v, DTYPE_t[:, :] res, int num_threads) nogil:
+cpdef int exp_map(DTYPE_t[:, :] p, DTYPE_t[:, :] v, DTYPE_t[:, :] res, int num_threads) except -1 nogil:
     cdef DTYPE_t* exp_map_res = <DTYPE_t*> malloc(sizeof(DTYPE_t) * 3)
 
     for i in range(p.shape[0]):
