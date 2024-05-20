@@ -273,6 +273,7 @@ def gradient_descent(
                         ** 2) ** 2)[:, np.newaxis] * grad.reshape(n_samples, 2) / 4
                 grad = grad.flatten()
 
+            check_is_inf_nan(grad)
             grad_norm = linalg.norm(grad)
             print(f'[solver.py][grad] {grad}')
             print(f'[solver.py][grad_norm] {grad_norm}')

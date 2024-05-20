@@ -29,7 +29,8 @@ cdef float FLOAT32_TINY = np.finfo(np.float32).tiny
 cdef float FLOAT64_EPS = np.finfo(np.float64).eps
 cdef float FLOAT128_EPS = np.finfo(np.float128).eps
 
-cdef double EPSILON = 1e-5
+cdef double EPSILON = 1e-10
+cdef double EPSILON_CHECK = 1e-7
 cdef double MAX_TANH = 15.0
 cdef double BOUNDARY = 1 - EPSILON
 cdef int LORENTZ_T = 2
@@ -139,10 +140,20 @@ cdef DTYPE_t sq_norm(DTYPE_t x, DTYPE_t y) nogil:
 cdef DTYPE_t sq_norm_3d(DTYPE_t[3] x) nogil:
     return x[0] * x[0] + x[1] * x[1] + x[2] * x[2]
 
-cdef int check_on_hyperboloid(DTYPE_t[3] p) except -1 nogil:
-    cdef DTYPE_t sm = p[LORENTZ_T] * p[LORENTZ_T] - p[LORENTZ_X_1] * p[LORENTZ_X_1] - p[LORENTZ_X_2] * p[LORENTZ_X_2] - 1
+#
+# SANITY CHECKS
+#
+cdef int check_in_tangent_space(DTYPE_t[3] p, DTYPE_t[3] u) except -1 nogil:
+    cdef DTYPE_t mb = minkowski_bilinear(p, u)
 
-    if sm > EPSILON:
+    if fabs(mb) > EPSILON_CHECK:
+        with gil:
+            raise ValueError(f'\np: {p[0]} {p[1]} {p[2]}\tu: {u[0]} {u[1]} {u[2]}\nmb: {mb}')
+
+cdef int check_on_hyperboloid(DTYPE_t[3] p) except -1 nogil:
+    cdef DTYPE_t sm = fabs(minkowski_bilinear(p, p) + 1)
+
+    if sm > EPSILON_CHECK:
         with gil:
             raise ValueError(f'p: {p[0]} {p[1]} {p[2]}\nsm: {sm}')
 
@@ -156,6 +167,36 @@ cpdef int check_on_hyperboloid_all(DTYPE_t[:,:] ps) except -1 nogil:
 
         check_on_hyperboloid(p)
 
+cdef int check_is_inf_nan(DTYPE_t[3] p) except -1 nogil:
+    check_is_inf_nan_all_n(p, 3)
+
+cdef int check_is_inf_nan_all_n(DTYPE_t* ps, int n) except -1 nogil:
+    for i in range(n):
+        if isnan(ps[i]):
+            with gil:
+                raise ValueError("NAN detected!")
+        if isinf(ps[i]):
+            with gil:
+                raise ValueError("INF detected!")
+
+
+cpdef int check_is_inf_nan_all(double[:, :] ps) except -1 nogil:
+    cdef SIZE_t n_samples = ps.shape[0]
+
+    for i in range(n_samples):
+        for j in range(3):
+            if isnan(ps[i, j]):
+                with gil:
+                    raise ValueError("NAN detected!")
+            if isinf(ps[i, j]):
+                with gil:
+                    raise ValueError("INF detected!")
+
+
+
+#
+# Helpers
+#
 cpdef void poincare_to_lorentz(DTYPE_t y1, DTYPE_t y2, DTYPE_t[:] result) nogil:
     cdef:
         DTYPE_t term = 1 - y1 * y1 - y2 * y2
@@ -922,26 +963,34 @@ cdef void distance_grad_lorentz(DTYPE_t[3] u, DTYPE_t[3] v, DTYPE_t* res) nogil:
         res[i] = scalar * v[i]
 
 # Project the gradient on the tangent space at point p on the hyperboloid
-cdef void project_to_tangent_space(DTYPE_t[3] p, DTYPE_t[3] grad, DTYPE_t* res) nogil:
+cdef int project_to_tangent_space(DTYPE_t[3] p, DTYPE_t[3] grad, DTYPE_t* res) except -1 nogil:
     cdef DTYPE_t minkbil = minkowski_bilinear(p, grad)
+
+    check_on_hyperboloid(p)
 
     res[0] = grad[0] + p[0] * minkbil
     res[1] = grad[1] + p[1] * minkbil
     res[2] = grad[2] + p[2] * minkbil
-    # XXX: Debug
-    if fabs(minkowski_bilinear(p, res)) > EPSILON:
-        printf("[project][point] %f %f %f\n", p[0], p[1], p[2])
-        printf("[project][minkbil] %f\n", minkbil)
-        printf("[project] %f %f %f -> %f %f %f\n", grad[0], grad[1], grad[2], res[0], res[1], res[2])
+
+    # # XXX: Debug
+    # if fabs(minkowski_bilinear(p, res)) > EPSILON:
+    #     printf("[project][point] %e %e %e\n", p[0], p[1], p[2])
+    #     printf("[project][minkbil] %e\n", minkbil)
+    #     printf("[project][cplm] %e\n", p[0]*grad[0])
+    #     printf("[project][cplm] %e\n", p[1]*grad[1])
+    #     printf("[project][cplm] %e\n", -p[2]*grad[2])
+    #     printf("[project] %e %e %e -> %e %e %e\n", grad[0], grad[1], grad[2], res[0], res[1], res[2])
+    # check_in_tangent_space(p, res)
 
 # Projects a vector from the tangent space back on the hyperboloid
 cdef int exp_map_single_lorentz(DTYPE_t[3] p, DTYPE_t[3] v, DTYPE_t* res) except -1 nogil:
-    cdef DTYPE_t vn = minkowski_bilinear(v, v)
+    cdef DTYPE_t vn = fabs(minkowski_bilinear(v, v))
     # cdef DTYPE_t vn = sq_norm_3d(v)
     cdef DTYPE_t norm
     cdef DTYPE_t coshval
     cdef DTYPE_t sinhval
 
+    check_in_tangent_space(p, v)
     norm = sqrt(vn)
 
     if norm != 0:
@@ -1068,7 +1117,7 @@ cdef double exact_compute_gradient(float[:] timings,
         for ax in range(n_dimensions):
             coord = i * n_dimensions + ax
             tot_force_interm[ax] = pos_f[coord] - (neg_f[coord] / sQ)
-        project_to_tangent_space(&pos_reference[i, 0], tot_force_interm, &tot_force[i, 0])
+        project_to_tangent_space(&pos_reference[i, 0], tot_force_interm, &tot_force[i, 0]) # XXX: not thread safe, will not work
 
     free(neg_f)
     free(pos_f)
@@ -1156,11 +1205,11 @@ cdef double compute_gradient(float[:] timings,
         int n_dimensions = pos_reference.shape[1]
         double sQ
         double error
-        DTYPE_t[3] tot_force_interm
         clock_t t1 = 0, t2 = 0
 
     cdef double* neg_f = <double*> malloc(sizeof(double) * n_samples * n_dimensions)
     cdef double* pos_f = <double*> malloc(sizeof(double) * n_samples * n_dimensions)
+    cdef DTYPE_t* tot_force_interm = <DTYPE_t*> malloc(sizeof(DTYPE_t) * n_samples * n_dimensions)
 
     if TAKE_TIMING:
         t1 = clock()
@@ -1173,6 +1222,7 @@ cdef double compute_gradient(float[:] timings,
 
     # XXX: Debug
     printf("[compute_gradient][neg_f[0]]: %f %f %f\n", neg_f[0], neg_f[1], neg_f[2])
+    check_is_inf_nan_all_n(neg_f, n_samples * n_dimensions)
     printf("[compute_gradient][sQ]: %f\n", sQ)
 
     if TAKE_TIMING:
@@ -1186,19 +1236,25 @@ cdef double compute_gradient(float[:] timings,
         t2 = clock()
         timings[3] = ((float) (t2 - t1)) / CLOCKS_PER_SEC
 
+    check_is_inf_nan_all_n(pos_f, n_samples * n_dimensions)
+
     for i in prange(start, n_samples, nogil=True, num_threads=num_threads, schedule='static'):
         for ax in range(n_dimensions):
             coord = i * n_dimensions + ax
-            tot_force_interm[ax] = pos_f[coord] - (neg_f[coord] / sQ)
+            tot_force_interm[coord] = pos_f[coord] - (neg_f[coord] / sQ)
 
-        project_to_tangent_space(&pos_reference[i, 0], tot_force_interm, &tot_force[i, 0])
+    
+    for i in prange(start, n_samples, nogil=True, num_threads=num_threads, schedule='static'):
+        project_to_tangent_space(&pos_reference[i, 0], &tot_force_interm[i * n_dimensions], &tot_force[i, 0])
     
     # XXX: Debug
     printf("[compute_gradient][pos_f[0]]: %f %f %f\n", pos_f[0], pos_f[1], pos_f[2])
     printf("[compute_gradient][tot_force[0]]: %f %f %f\n", tot_force[0][0], tot_force[0][1], tot_force[0][2])
+    check_is_inf_nan_all(tot_force)
     
     free(neg_f)
     free(pos_f)
+    free(tot_force_interm)
     return error
 
 cdef double compute_gradient_positive(double[:] val_P,
