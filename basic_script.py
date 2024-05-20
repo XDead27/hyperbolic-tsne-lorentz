@@ -76,9 +76,9 @@ X_embedded = initialization(
 )
 
 if model == "lorentz":
-    X_embedded = to_lorentz(X_embedded)
+    X_embedded, lorentz_tr_err = to_lorentz(X_embedded)
+    print(f'Max Lorentz Translation Error: {lorentz_tr_err}')
 
-# print(X_embedded)
 
 # Initialize the embedder
 htsne = HyperbolicTSNE(

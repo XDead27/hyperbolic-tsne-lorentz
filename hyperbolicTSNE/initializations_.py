@@ -58,9 +58,11 @@ def to_lorentz(X):
     X_lorentz = np.zeros([n_samples, n_components + 1], dtype=ctypes.c_double)
     X_li = np.zeros([n_components + 1], dtype=ctypes.c_double)
 
+    max_err = 0.0
     for i in range(n_samples):
-        poincare_to_lorentz(X[i, 0], X[i, 1], X_li)
+        err = poincare_to_lorentz(X[i, 0], X[i, 1], X_li)
         X_lorentz[i, :] = X_li.copy()
+        max_err = max(max_err, err)
 
-    return X_lorentz
+    return X_lorentz, max_err
 

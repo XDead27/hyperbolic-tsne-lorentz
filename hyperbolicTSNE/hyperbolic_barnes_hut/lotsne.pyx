@@ -197,13 +197,21 @@ cpdef int check_is_inf_nan_all(double[:, :] ps) except -1 nogil:
 #
 # Helpers
 #
-cpdef void poincare_to_lorentz(DTYPE_t y1, DTYPE_t y2, DTYPE_t[:] result) nogil:
+cpdef DTYPE_t poincare_to_lorentz(DTYPE_t y1, DTYPE_t y2, DTYPE_t[:] result) nogil:
     cdef:
         DTYPE_t term = 1 - y1 * y1 - y2 * y2
+        DTYPE_t mb_check
+        DTYPE_t[3] res_check
 
     result[LORENTZ_T] = 2 / term - 1
+    res_check[LORENTZ_T] = result[LORENTZ_T]
     result[LORENTZ_X_1] = 2 * y1 / term
+    res_check[LORENTZ_X_1] = result[LORENTZ_X_1]
     result[LORENTZ_X_2] = 2 * y2 / term
+    res_check[LORENTZ_X_2] = result[LORENTZ_X_2]
+
+    mb_check = minkowski_bilinear(res_check, res_check)
+    return fabs(mb_check + 1.)
 
 cpdef void lorentz_to_poincare(DTYPE_t[:] lp, DTYPE_t[:] result) nogil:
     result[0] = lp[LORENTZ_X_1] / (1 + lp[LORENTZ_T])
@@ -920,47 +928,52 @@ cdef class _OcTree:
 #################################################
 # Dist and Dist Grad functions
 #################################################
-# NON-PRIORITY TODO: Change these to the Lorentz model distance and gradient
+# Distance function on the hyperboloid model
 cdef DTYPE_t distance_q(DTYPE_t* u, DTYPE_t* v) nogil:
     return distance_lorentz(u[0], u[1], u[2], v[0], v[1], v[2])
 
-# Distance gradient on the poincare model (takes two pointers as arguments)
+# Distance gradient on the hyperboloid model (takes two pointers as arguments)
 cdef void distance_grad_q(DTYPE_t[3] u, DTYPE_t[3] v, DTYPE_t* res) nogil:
     distance_grad_lorentz(u, v, res)
 
 # Distance function for the hyperboloid model
 cpdef DTYPE_t distance_lorentz(DTYPE_t p0, DTYPE_t p1, DTYPE_t p2, DTYPE_t q0, DTYPE_t q1, DTYPE_t q2) nogil:
-    if fabs(p0 - q0) <= EPSILON and fabs(p1 - q1) <= EPSILON:
-        return 0.
-
     cdef DTYPE_t[3] lp1
     cdef DTYPE_t[3] lp2
-    cdef DTYPE_t res1
+    cdef DTYPE_t mb
     lp1[0] = p0; lp1[1] = p1; lp1[2] = p2
     lp2[0] = q0; lp2[1] = q1; lp2[2] = q2
 
-    res1 = -minkowski_bilinear(lp1, lp2)
-    if res1 < 1.:
-        res1 = 1.
+    mb = minkowski_bilinear(lp1, lp2)
+    if fabs(mb + 1) <= EPSILON:
+        return 0.
 
-    return acosh(res1)
+    if -mb < 1.:
+        printf("[distance] HOWWWWWWWWWWWWWWW: %e\n", -mb)
+
+    return acosh(-mb)
 
 # Distance gradient on the lorentz model, with respect to u 
 cdef void distance_grad_lorentz(DTYPE_t[3] u, DTYPE_t[3] v, DTYPE_t* res) nogil:
-    if fabs(u[LORENTZ_X_1] - v[LORENTZ_X_1]) <= EPSILON and fabs(u[LORENTZ_X_2] - v[LORENTZ_X_2]) <= EPSILON:
-        for i in range(3):
-            res[i] = 0.
-        return
-
     cdef:
         DTYPE_t minkbil = minkowski_bilinear(u, v)
         DTYPE_t scalar = - 1 / sqrt(minkbil * minkbil - 1)
     
-    if fabs(minkbil * minkbil - 1.) <= EPSILON:
+    if fabs(minkbil + 1) <= EPSILON:
+        for i in range(3):
+            res[i] = 0.
+        return
+
+    # if fabs(minkbil * minkbil - 1.) <= EPSILON:
+    if fabs(minkbil) - 1. <= EPSILON:
         scalar = 0.
 
     for i in range(3):
         res[i] = scalar * v[i]
+        if isnan(res[i]):
+            printf("scalar: %e\tminkbil: %e\tcond: %d\nu: %e %e %e\nv: %e %e %e\n", scalar, minkbil * minkbil - 1., fabs(minkbil * minkbil - 1.) <= EPSILON, u[0], u[1], u[2], v[0], v[1], v[2])
+
+    # check_is_inf_nan(res)
 
 # Project the gradient on the tangent space at point p on the hyperboloid
 cdef int project_to_tangent_space(DTYPE_t[3] p, DTYPE_t[3] grad, DTYPE_t* res) except -1 nogil:
@@ -983,14 +996,14 @@ cdef int project_to_tangent_space(DTYPE_t[3] p, DTYPE_t[3] grad, DTYPE_t* res) e
     # check_in_tangent_space(p, res)
 
 # Projects a vector from the tangent space back on the hyperboloid
-cdef int exp_map_single_lorentz(DTYPE_t[3] p, DTYPE_t[3] v, DTYPE_t* res) except -1 nogil:
+cdef DTYPE_t exp_map_single_lorentz(DTYPE_t[3] p, DTYPE_t[3] v, DTYPE_t* res) except -1 nogil:
     cdef DTYPE_t vn = fabs(minkowski_bilinear(v, v))
     # cdef DTYPE_t vn = sq_norm_3d(v)
     cdef DTYPE_t norm
     cdef DTYPE_t coshval
     cdef DTYPE_t sinhval
 
-    check_in_tangent_space(p, v)
+    # check_in_tangent_space(p, v)
     norm = sqrt(vn)
 
     if norm != 0:
@@ -1010,18 +1023,30 @@ cdef int exp_map_single_lorentz(DTYPE_t[3] p, DTYPE_t[3] v, DTYPE_t* res) except
             with gil:
                 raise ValueError()
 
-    check_on_hyperboloid(res) # Sanity check
+    # check_on_hyperboloid(res) # Sanity check
+    return minkowski_bilinear(res, res) + 1.
 
 # Applies exp_map_single_lorentz for all points in p and vectors in v
 cpdef int exp_map(DTYPE_t[:, :] p, DTYPE_t[:, :] v, DTYPE_t[:, :] res, int num_threads) except -1 nogil:
     cdef DTYPE_t* exp_map_res = <DTYPE_t*> malloc(sizeof(DTYPE_t) * 3)
+    cdef DTYPE_t max_err = 0., max_err_p = 0., max_err_t = 0., err
+
 
     for i in range(p.shape[0]):
-        exp_map_single_lorentz(&p[i, 0], &v[i, 0], exp_map_res)
+        err = exp_map_single_lorentz(&p[i, 0], &v[i, 0], exp_map_res)
+        
+        max_err = max(max_err, err)
+        err = fabs(minkowski_bilinear(&p[i, 0], &p[i, 0]) + 1.)
+        max_err_p = max(max_err_p, err)
+        max_err_t = max(max_err_t, fabs(minkowski_bilinear(&p[i, 0], &v[i, 0])))
 
         for j in range(3):
             res[i, j] = exp_map_res[j]
 
+    # XXX: Debug
+    printf("[exp_map] Input error: %e\n", max_err_p)
+    printf("[exp_map] Tangent space error: %e\n", max_err_t)
+    printf("[exp_map] Max Projection Error: %e\n", max_err)
     free(exp_map_res)
 
 # Compute the logarithmic map on the hyperboloid #TODO: idk if this is actually right
