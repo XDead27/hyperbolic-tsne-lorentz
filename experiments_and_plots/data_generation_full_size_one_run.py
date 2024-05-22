@@ -31,8 +31,8 @@ from hyperbolicTSNE.visualization import plot_poincare
 # GENERAL EXPERIMENT PARAMETERS #
 #################################
 
-BASE_DIR = "../results/full_size_one_run"  # directory where results will be saved
-DATASETS_DIR = "../datasets"  # directory to read the data from
+BASE_DIR = "./results/full_size_one_run"  # directory where results will be saved
+DATASETS_DIR = "./datasets"  # directory to read the data from
 
 # Constants
 SEED = 42  # seed to initialize random processes
@@ -51,7 +51,7 @@ datasets = [
     Datasets.PLANARIA,
     Datasets.MNIST,
     Datasets.C_ELEGANS,
-    Datasets.WORDNET
+    # Datasets.WORDNET
 ]
 tsne_types = ["accelerated", "exact"]  # the type "accelerated" uses the polar quad tree for acceleration, "exact"
 # uses no acceleration and runs in quadratic time per iteration
@@ -73,6 +73,7 @@ for dataset in datasets:  # Iterate over the data sets
         data_home=DATASETS_DIR,
         to_return="X_labels",  # Return the high-dimensional data and its labels
         hd_params=hd_params,
+        sample=4000,
         knn_method=KNN_METHOD
     )
 

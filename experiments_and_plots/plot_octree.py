@@ -176,10 +176,10 @@ def plot_octree(points, qp_idx, ax):
             continue
 
         # print("DRAW FFS")
-        ax.scatter([barycenter[0]], [barycenter[1]], [barycenter[2]], linewidth=2., marker="^", c="#253494", zorder=1, s=5)
+        # ax.scatter([barycenter[0]], [barycenter[1]], [barycenter[2]], linewidth=2., marker="^", c="#253494", zorder=1, s=5)
         dif = ((depth * np.array([173, 31, 89])) % 255) / 255
 
-        plot_wire_cube(min_bound, max_bound, (dif[0], dif[1], dif[2]), depth + 2, ax)
+        # plot_wire_cube(min_bound, max_bound, (dif[0], dif[1], dif[2]), depth + 2, ax)
 
         if cnt == 0:
             mib = min_bound
@@ -221,7 +221,7 @@ def plot_hyperboloid(min_bounds, max_bounds, ax):
     Z = np.sqrt(X**2 + Y**2 + 1)
 
     # Plot the surface.
-    ax.plot_surface(X, Y, Z, edgecolor='darkgreen', lw=0.5, rstride=32, cstride=32, alpha=0.05, zorder=0)
+    ax.plot_surface(X, Y, Z, edgecolor='darkgreen', lw=0.5, rstride=4, cstride=4, alpha=0.05, zorder=0)
 
 if __name__ == '__main__':
     # fig = plt.figure(figsize=plt.figaspect(2.0))

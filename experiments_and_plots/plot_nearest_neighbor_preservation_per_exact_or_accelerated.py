@@ -23,8 +23,8 @@ from hyperbolicTSNE import Datasets, load_data
 # GENERAL EXPERIMENT PARAMETERS #
 #################################
 
-BASE_DIR = Path("../results/full_size_one_run")
-DATASETS_DIR = "../datasets"  # directory to read the data from
+BASE_DIR = Path("./results/full_size_one_run")
+DATASETS_DIR = "./datasets"  # directory to read the data from
 
 # Constants
 NEIGHBORHOOD_SIZE = 100  # Neighborhood size to grab the k_max many neighbors from

@@ -27,8 +27,8 @@ from hyperbolicTSNE.visualization import plot_poincare
 # GENERAL EXPERIMENT PARAMETERS #
 #################################
 
-BASE_DIR = "../results/nnp_per_theta_MNIST"
-DATASETS_DIR = "../datasets"  # directory to read the data from
+BASE_DIR = "./results/nnp_per_theta_MNIST"
+DATASETS_DIR = "./datasets"  # directory to read the data from
 
 # Constants
 SEED = 42  # seed to initialize random processes
@@ -42,12 +42,13 @@ dataset = Datasets.MNIST  # The dataset to run the experiment on
 # EXPERIMENT LOOP #
 ###################
 
-dataX, dataLabels, D, V = load_data(  # Load the data
+dataX, dataLabels, D, V, _ = load_data(  # Load the data
     dataset,
     data_home=DATASETS_DIR,
     random_state=SEED,
     to_return="X_labels_D_V",
-    hd_params=hd_params
+    hd_params=hd_params,
+    sample=4000
 )
 
 X_embedded = initialization(  # create an initial embedding of the data into 2-dimensional space via PCA

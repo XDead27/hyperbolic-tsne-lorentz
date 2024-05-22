@@ -77,10 +77,17 @@ fig, (ax1, ax2) = plt.subplots(2)
 ax1.plot(num_points, timings_p[:, 0], c='r')
 ax1.plot(num_points, timings_l[:, 0], c='b')
 ax1.legend(['Poincare polar quadtree-accelerated t-SNE', 'Our version'])
+ax1.set_title("Tree build time")
+ax1.set_ylabel("time (s)")
 
 ax2.plot(num_points, timings_p[:, 1], c='r')
 ax2.plot(num_points, timings_l[:, 1], c='b')
 ax2.legend(['Poincare polar quadtree-accelerated t-SNE', 'Our version'])
+ax2.set_title("Tree query time")
+ax2.set_ylabel("time (s)")
+ax2.set_xlabel("# points in dataset")
+
+fig.suptitle("Mean times of tree operations")
 
 plt.tight_layout()
 
