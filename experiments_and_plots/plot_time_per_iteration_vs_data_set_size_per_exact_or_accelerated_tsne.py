@@ -19,7 +19,7 @@ from matplotlib import pyplot as plt
 ####################
 # READING THE DATA #
 ####################
-results_path = Path("../results/samples_per_data_set/")
+results_path = Path("./results/samples_per_data_set/")
 df = pd.read_csv(results_path.joinpath("overview.csv"))
 timings_dfs = []
 for record in df.to_records():

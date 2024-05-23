@@ -34,8 +34,8 @@ from hyperbolicTSNE.visualization import plot_poincare
 # GENERAL EXPERIMENT PARAMETERS #
 #################################
 
-BASE_DIR = "../results/samples_per_data_set"  # dir where results will be saved
-DATASETS_DIR = "../datasets"  # directory to read the data from
+BASE_DIR = "./results/samples_per_data_set"  # dir where results will be saved
+DATASETS_DIR = "./datasets"  # directory to read the data from
 
 # Constants
 SEED = 42  # seed to initialize random processes
@@ -51,18 +51,20 @@ hd_params = {"perplexity": PERP}
 
 # Variables
 datasets = [
-    Datasets.LUKK,
+    # Datasets.LUKK,
     Datasets.MYELOID8000,
     Datasets.PLANARIA,
     Datasets.MNIST,
     Datasets.C_ELEGANS,
-    Datasets.WORDNET
+    # Datasets.WORDNET
 ]
 tsne_types = ["accelerated", "exact"]  # the type "accelerated" uses the polar quad tree for acceleration, "exact"
 # uses no acceleration and runs in quadratic time per iteration
-splitting_strategies = ["equal_length", "equal_area"]  # the polar quad tree comes in two flavors: Splitting by equal
+splitting_strategies = ["equal_length"]  # the polar quad tree comes in two flavors: Splitting by equal
 # area and by equal length in the embedding space. The "equal_length" splitting shows better performance in our
 # experiments.
+models = ["poincare", "lorentz"]
+max_samples = 10000
 
 ###################
 # EXPERIMENT LOOP #
@@ -81,7 +83,7 @@ for dataset in datasets:  # Iterate over the data sets
         knn_method=KNN_METHOD
     )
 
-    n_samples = dataX.shape[0]
+    n_samples = min(max_samples, dataX.shape[0])
     sample_sizes = np.linspace(0, n_samples, num=SIZE_SAMPLES + 1)[1:].astype(int)  # Equally distribute sample sizes
     # across the available number of data points
 
@@ -93,9 +95,9 @@ for dataset in datasets:  # Iterate over the data sets
         method="pca"
     )
 
-    for config_id, config in enumerate(product(sample_sizes, tsne_types, splitting_strategies)):
+    for config_id, config in enumerate(product(sample_sizes, tsne_types, splitting_strategies, models)):
 
-        sample_size, tsne_type, splitting_strategy = config
+        sample_size, tsne_type, splitting_strategy, model = config
 
         # We only have to run one version of exact t-SNE, so we use the combination "exact" + "equal_length" (which
         # does not use the splitting property anyway since it is exact). Hence, we can skip the "equal_area" version
@@ -131,6 +133,7 @@ for dataset in datasets:  # Iterate over the data sets
                 exact=(tsne_type == "exact"),
                 area_split=(splitting_strategy == "equal_area"),
                 n_iter_check=10,  # Needed for early stopping criterion
+                hyperbolic_model=model,
                 size_tol=0.999  # Size of the embedding to be used as early stopping criterion
             )
 
@@ -149,7 +152,8 @@ for dataset in datasets:  # Iterate over the data sets
                     "seed": SEED,
                     "sample_size": int(sample_size),
                     "tsne_type": tsne_type,
-                    "splitting_strategy": splitting_strategy
+                    "splitting_strategy": splitting_strategy,
+                    "model": model
                 }
 
                 print(f"[experiment_grid] - Starting configuration {config_id} with dataset {dataset.name}: {params}")

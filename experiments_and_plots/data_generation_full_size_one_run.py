@@ -46,18 +46,22 @@ hd_params = {"perplexity": PERP}
 
 # Variables
 datasets = [
-    Datasets.LUKK,
+    # Datasets.LUKK,
     Datasets.MYELOID8000,
     Datasets.PLANARIA,
     Datasets.MNIST,
     Datasets.C_ELEGANS,
-    # Datasets.WORDNET
+    # Datasets.WORDNET,
 ]
+num_points = 10000
 tsne_types = ["accelerated", "exact"]  # the type "accelerated" uses the polar quad tree for acceleration, "exact"
 # uses no acceleration and runs in quadratic time per iteration
-splitting_strategies = ["equal_length", "equal_area"]  # the polar quad tree comes in two flavors: Splitting by equal
+# splitting_strategies = ["equal_length", "equal_area"]  # the polar quad tree comes in two flavors: Splitting by equal
+splitting_strategies = ["equal_length"]
 # area and by equal length in the embedding space. The "equal_length" splitting shows better performance in our
 # experiments.
+models = ["poincare", "lorentz"]
+omit_types_models_combinations = [] # omit (tsne_types[i], models[j])
 
 ###################
 # EXPERIMENT LOOP #
@@ -73,12 +77,11 @@ for dataset in datasets:  # Iterate over the data sets
         data_home=DATASETS_DIR,
         to_return="X_labels",  # Return the high-dimensional data and its labels
         hd_params=hd_params,
-        sample=4000,
         knn_method=KNN_METHOD
     )
 
     n_samples = dataX.shape[0]
-    sample_sizes = np.array([n_samples, ]).astype(int)  # only run the full size sample, don't create sub-samples
+    sample_sizes = np.array([min(10000, n_samples), ]).astype(int)  # only run the full size sample, don't create sub-samples
 
     X_embedded = initialization(  # create an initial embedding of the data into 2-dimensional space via PCA
         n_samples=n_samples,
@@ -88,12 +91,21 @@ for dataset in datasets:  # Iterate over the data sets
         method="pca"
     )
 
-    for config_id, config in enumerate(product(sample_sizes, tsne_types, splitting_strategies)):
+    for config_id, config in enumerate(product(sample_sizes, tsne_types, splitting_strategies, models)):
         for run_n in [0, ]:  # do not repeat the run
 
-            sample_size, tsne_type, splitting_strategy = config
+            sample_size, tsne_type, splitting_strategy, model = config
+            omit = False
 
             print(f"[experiment_grid] Processing {dataset}, run_id {run_n}, config_id ({config_id}): {config}")
+            for oi, oj in omit_types_models_combinations:
+                if tsne_type == tsne_types[oi] and model == models[oj]:
+                    print("[experiment_grid] Combination ommited...")
+                    omit = True
+
+            if omit:
+                break
+
 
             # Generate random sample
             idx = rng.choice(np.arange(n_samples), sample_size, replace=False)
@@ -117,6 +129,7 @@ for dataset in datasets:  # Iterate over the data sets
                 exact=(tsne_type == "exact"),
                 area_split=(splitting_strategy == "equal_area"),
                 n_iter_check=10,  # Needed for early stopping criterion
+                hyperbolic_model=model,
                 size_tol=0.999  # Size of the embedding to be used as early stopping criterion
             )
 
@@ -134,6 +147,7 @@ for dataset in datasets:  # Iterate over the data sets
                     "seed": SEED,
                     "sample_size": int(sample_size),
                     "tsne_type": tsne_type,
+                    "model": model,
                     "splitting_strategy": splitting_strategy
                 }
 

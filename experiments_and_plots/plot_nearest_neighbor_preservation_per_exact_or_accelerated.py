@@ -13,6 +13,7 @@ The code only computes the runs that do not have a folder.
 
 from pathlib import Path
 import numpy as np
+import json
 from scipy.sparse import load_npz
 import matplotlib.pyplot as plt
 
@@ -61,6 +62,8 @@ for dataset_dir in BASE_DIR.glob("*"):
 
                                 dataY = np.load(run_dir.joinpath("final_embedding.npy"), allow_pickle=True)
 
+                                params = json.load(open(run_dir.joinpath("params.json")))
+
                                 thresholds, precisions, recalls, true_positives = \
                                     hyperbolic_nearest_neighbor_preservation(
                                         dataX_sample,
@@ -82,13 +85,10 @@ for dataset_dir in BASE_DIR.glob("*"):
                                 np.save(run_dir.joinpath("true_positives.npy"), true_positives)
 
                                 # Add points to plot
-                                if config_dir.name == 'configuration_0':
-                                    ax.plot(precisions, recalls, label="accelerated")
-                                else:
-                                    ax.plot(precisions, recalls, label="exact")
+                                ax.plot(precisions, recalls, label=f"{params['tsne_type']} {params['model']} {params['splitting_strategy']}")
 
-        ax.set_xlabel("Precision")
-        ax.set_ylabel("Recall")
-        ax.legend()
-        fig.savefig(dataset_dir.joinpath(f"{dataset_name}_prec-vs-rec.png"))
-        plt.close(fig)
+                ax.set_xlabel("Precision")
+                ax.set_ylabel("Recall")
+                ax.legend()
+                fig.savefig(size_dir.joinpath(f"{dataset_name}_prec-vs-rec_{subset_idx.shape[0]}.png"))
+                plt.close(fig)
