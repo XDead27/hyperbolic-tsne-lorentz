@@ -5,7 +5,7 @@ import numpy as np
 from sklearn.decomposition import PCA
 
 from sklearn.utils import check_random_state
-from .hyperbolic_barnes_hut.lotsne import poincare_to_lorentz
+from .hyperbolic_barnes_hut.lotsne import poincare_to_lorentz, lorentz_to_poincare
 
 
 def initialization(n_samples, n_components, X=None, method="random", random_state=None):
@@ -65,4 +65,20 @@ def to_lorentz(X):
         max_err = max(max_err, err)
 
     return X_lorentz, max_err
+
+def from_lorentz(X):
+    n_components = X.shape[1]
+    n_samples = X.shape[0]
+
+    if n_components != 3:
+        raise ValueError("Data has to have exactly 3 components!")
+
+    X_poincare = np.zeros([n_samples, n_components - 1], dtype=ctypes.c_double)
+    X_li = np.zeros([n_components - 1], dtype=ctypes.c_double)
+
+    for i in range(n_samples):
+        lorentz_to_poincare(X[i, :], X_li)
+        X_poincare[i, :] = X_li.copy()
+
+    return X_poincare
 

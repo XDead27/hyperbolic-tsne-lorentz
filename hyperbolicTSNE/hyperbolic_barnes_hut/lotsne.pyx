@@ -197,6 +197,11 @@ cpdef int check_is_inf_nan_all(double[:, :] ps) except -1 nogil:
 #
 # Helpers
 #
+
+# Computes the T value for a 2 dimensional point
+cpdef DTYPE_t compute_lorentz_t(DTYPE_t y1, DTYPE_t y2) nogil:
+    return sqrt(1. + y1 * y1 + y2 * y2)
+
 cpdef DTYPE_t poincare_to_lorentz(DTYPE_t y1, DTYPE_t y2, DTYPE_t[:] result) nogil:
     cdef:
         DTYPE_t term = 1 - y1 * y1 - y2 * y2
@@ -986,6 +991,9 @@ cdef int project_to_tangent_space(DTYPE_t[3] p, DTYPE_t[3] grad, DTYPE_t* res) e
     res[2] = grad[2] + p[2] * minkbil
 
     # # XXX: Debug
+    # err_p = fabs(minkowski_bilinear(p, p) + 1.)
+    # err_g = fabs(minkowski_bilinear(p, res))
+    # if err_g / err_p > 10.:
     # if fabs(minkowski_bilinear(p, res)) > EPSILON:
     #     printf("[project][point] %e %e %e\n", p[0], p[1], p[2])
     #     printf("[project][minkbil] %e\n", minkbil)
@@ -993,6 +1001,8 @@ cdef int project_to_tangent_space(DTYPE_t[3] p, DTYPE_t[3] grad, DTYPE_t* res) e
     #     printf("[project][cplm] %e\n", p[1]*grad[1])
     #     printf("[project][cplm] %e\n", -p[2]*grad[2])
     #     printf("[project] %e %e %e -> %e %e %e\n", grad[0], grad[1], grad[2], res[0], res[1], res[2])
+    #     printf("[project][error point] %e\n", err_p)
+    #     printf("[project][error res] %e\n", err_g)
     # check_in_tangent_space(p, res)
 
 # Projects a vector from the tangent space back on the hyperboloid
@@ -1023,6 +1033,9 @@ cdef DTYPE_t exp_map_single_lorentz(DTYPE_t[3] p, DTYPE_t[3] v, DTYPE_t* res) ex
             with gil:
                 raise ValueError()
 
+    # Precision adjustment
+    res[LORENTZ_T] = compute_lorentz_t(res[LORENTZ_X_1], res[LORENTZ_X_2])
+
     # check_on_hyperboloid(res) # Sanity check
     return minkowski_bilinear(res, res) + 1.
 
@@ -1043,10 +1056,10 @@ cpdef int exp_map(DTYPE_t[:, :] p, DTYPE_t[:, :] v, DTYPE_t[:, :] res, int num_t
         for j in range(3):
             res[i, j] = exp_map_res[j]
 
-    # XXX: Debug
-    printf("[exp_map] Input error: %e\n", max_err_p)
-    printf("[exp_map] Tangent space error: %e\n", max_err_t)
-    printf("[exp_map] Max Projection Error: %e\n", max_err)
+    # # XXX: Debug
+    # printf("[exp_map] Input error: %e\n", max_err_p)
+    # printf("[exp_map] Tangent space error: %e\n", max_err_t)
+    # printf("[exp_map] Max Projection Error: %e\n", max_err)
     free(exp_map_res)
 
 # Compute the logarithmic map on the hyperboloid #TODO: idk if this is actually right
@@ -1054,7 +1067,7 @@ cdef void log_map_single_lorentz(DTYPE_t[3] p, DTYPE_t[3] q, DTYPE_t* res) nogil
     cdef DTYPE_t beta = - minkowski_bilinear(p, q)
     cdef DTYPE_t mult = acosh(beta) / sqrt(beta * beta - 1)
 
-    if beta <= 1.:
+    if fabs(beta*beta - 1) <= EPSILON:
         mult = 1.
 
     for i in range(3):
@@ -1245,10 +1258,10 @@ cdef double compute_gradient(float[:] timings,
         t2 = clock()
         timings[2] = ((float) (t2 - t1)) / CLOCKS_PER_SEC
 
-    # XXX: Debug
-    printf("[compute_gradient][neg_f[0]]: %f %f %f\n", neg_f[0], neg_f[1], neg_f[2])
-    check_is_inf_nan_all_n(neg_f, n_samples * n_dimensions)
-    printf("[compute_gradient][sQ]: %f\n", sQ)
+    # # XXX: Debug
+    # printf("[compute_gradient][neg_f[0]]: %f %f %f\n", neg_f[0], neg_f[1], neg_f[2])
+    # check_is_inf_nan_all_n(neg_f, n_samples * n_dimensions)
+    # printf("[compute_gradient][sQ]: %f\n", sQ)
 
     if TAKE_TIMING:
         t1 = clock()
@@ -1272,9 +1285,9 @@ cdef double compute_gradient(float[:] timings,
     for i in prange(start, n_samples, nogil=True, num_threads=num_threads, schedule='static'):
         project_to_tangent_space(&pos_reference[i, 0], &tot_force_interm[i * n_dimensions], &tot_force[i, 0])
     
-    # XXX: Debug
-    printf("[compute_gradient][pos_f[0]]: %f %f %f\n", pos_f[0], pos_f[1], pos_f[2])
-    printf("[compute_gradient][tot_force[0]]: %f %f %f\n", tot_force[0][0], tot_force[0][1], tot_force[0][2])
+    # # XXX: Debug
+    # printf("[compute_gradient][pos_f[0]]: %f %f %f\n", pos_f[0], pos_f[1], pos_f[2])
+    # printf("[compute_gradient][tot_force[0]]: %f %f %f\n", tot_force[0][0], tot_force[0][1], tot_force[0][2])
     check_is_inf_nan_all(tot_force)
     
     free(neg_f)

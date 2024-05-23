@@ -260,8 +260,8 @@ def gradient_descent(
         # only compute the error when needed
         compute_error = check_convergence or check_threshold or i == n_iter - 1
 
-        # XXX: Debug
-        print(f"[solver.py][before obj_grad] y: {y}")
+        # # XXX: Debug
+        # print(f"[solver.py][before obj_grad] y: {y}")
         check_is_inf_nan(y)
         check_on_hyperboloid(y)
 
@@ -275,15 +275,15 @@ def gradient_descent(
 
             check_is_inf_nan(grad)
             grad_norm = linalg.norm(grad)
-            print(f'[solver.py][grad] {grad}')
-            print(f'[solver.py][grad_norm] {grad_norm}')
+            # print(f'[solver.py][grad] {grad}')
+            # print(f'[solver.py][grad_norm] {grad_norm}')
         else:
             grad = cf.grad(hyperbolic_model, y, **cf_params)
             grad_norm = linalg.norm(grad)
 
-        # XXX: Debug
-        print("[solver.py] Applying exponential map...")
-        print(f'[solver.py][before exp_map] y:\n {y}')
+        # # XXX: Debug
+        # print("[solver.py] Applying exponential map...")
+        # print(f'[solver.py][before exp_map] y:\n {y}')
         check_is_inf_nan(y)
         check_on_hyperboloid(y)
 
@@ -301,8 +301,8 @@ def gradient_descent(
                              cf.params["params"]["num_threads"])
                 y = res.ravel()
                 
-                # XXX: Debug
-                print(f'[solver.py][after exp_map] y: {y}')
+                # # XXX: Debug
+                # print(f'[solver.py][after exp_map] y: {y}')
                 check_is_inf_nan(y)
                 check_on_hyperboloid(y)
 
@@ -323,8 +323,8 @@ def gradient_descent(
                              res_exp,
                              cf.params["params"]["num_threads"])
 
-                # XXX: Debug
-                print(f'[solver.py][after exp_map] y: {res_exp}')
+                # # XXX: Debug
+                # print(f'[solver.py][after exp_map] y: {res_exp}')
                 check_is_inf_nan(res_exp)
                 check_on_hyperboloid(res_exp)
 
@@ -335,8 +335,8 @@ def gradient_descent(
                              cf.params["params"]["num_threads"])
                 y = res_exp.ravel()
 
-                # XXX: Debug
-                print(f'[solver.py][after log_map] y: {res_log}')
+                # # XXX: Debug
+                # print(f'[solver.py][after log_map] y: {res_log}')
                 check_is_inf_nan(res_log)
 
                 update = res_log.ravel() * -1
@@ -363,9 +363,9 @@ def gradient_descent(
         pbar.set_description(
             f"Gradient Descent error: {error:.5f} grad_norm: {grad_norm:.5e}")
 
-        # XXX: Debug
-        print(f'[solver.py][exp_map] y: {y}')
-        print("[solver.py] Performing rescale (?)...")
+        # # XXX: Debug
+        # print(f'[solver.py][exp_map] y: {y}')
+        # print("[solver.py] Performing rescale (?)...")
         # If a rescale value has been specified, rescale the embedding now to have the bounding box fit the given value. 
         # TODO: ?
         if rescale is not None and i % n_iter_rescale == 0:

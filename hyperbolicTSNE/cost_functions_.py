@@ -382,6 +382,6 @@ class HyperbolicKL:
         if save_timings:
             self.results.append(timings)
 
-        print(f'[cost_functions.py][grad]: {grad}')
-        print(f'[cost_functions.py][error]: {error}')
+        # print(f'[cost_functions.py][grad]: {grad}')
+        # print(f'[cost_functions.py][error]: {error}')
         return error, grad
