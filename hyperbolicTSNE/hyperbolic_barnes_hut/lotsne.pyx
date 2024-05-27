@@ -368,7 +368,11 @@ cdef class _OcTree:
     cdef public SIZE_t n_points          # Total number of points
     cdef Cell* cells                     # Array of nodes
 
-    def __cinit__(self, int n_dimensions, int verbose):
+    # Debug fields
+    cdef bint take_timings
+    cdef float* timings
+
+    def __cinit__(self, int n_dimensions, int verbose, float[:] timings=None):
         """Constructor."""
         # Parameters of the tree
         self.n_dimensions = n_dimensions
@@ -381,6 +385,13 @@ cdef class _OcTree:
         self.capacity = 0
         self.n_points = 0
         self.cells = NULL
+
+        # Debug fields
+        if timings is not None:
+            self.take_timings = True
+            self.timings = &timings[0]
+        else:
+            self.take_timings = False
 
     def __dealloc__(self):
         """Destructor."""
