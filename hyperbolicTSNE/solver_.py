@@ -17,6 +17,7 @@ from tqdm import tqdm
 from .cost_functions_ import HyperbolicKL
 from .hyperbolic_barnes_hut import tsne
 from .hyperbolic_barnes_hut import lotsne
+from .initializations_ import from_lorentz
 
 MACHINE_EPSILON = np.finfo(np.double).eps
 
@@ -33,6 +34,12 @@ def check_on_hyperboloid(x):
         x = x.reshape(-1, 3)
 
     lotsne.check_on_hyperboloid_all(x)
+
+def print_max(x):
+    if len(x.shape) != 2 or x.shape[1] != 3:
+        x = x.reshape(-1, 3)
+
+    print(f'[result max] {np.max(x, axis=0)}')
 
 def log_iteration(logging_dict, logging_key, it, y, n_samples, n_components,
                   cf=None, cf_params=None, cf_val=None, grad=None, grad_norm=None, log_arrays=False,
@@ -80,6 +87,9 @@ def log_iteration(logging_dict, logging_key, it, y, n_samples, n_components,
             print("No cost function class provided, cf and grad not computed")
 
     y = y.copy().reshape(n_samples, n_components)
+    if hyperbolic_model == "lorentz":
+        y = from_lorentz(y.copy())
+
     y_bbox = list(np.concatenate((y.min(axis=0), y.max(axis=0))))
     y_bbox = (
         y_bbox[0], y_bbox[2], y_bbox[1], y_bbox[3], np.sqrt(
@@ -262,8 +272,8 @@ def gradient_descent(
 
         # # XXX: Debug
         # print(f"[solver.py][before obj_grad] y: {y}")
-        check_is_inf_nan(y)
-        check_on_hyperboloid(y)
+        # check_is_inf_nan(y)
+        # check_on_hyperboloid(y)
 
         if compute_error or logging:  # TODO: add different levels of logging to avoid bottlenecks
             error, grad = cf.obj_grad(hyperbolic_model, y, **cf_params)
@@ -284,8 +294,9 @@ def gradient_descent(
         # # XXX: Debug
         # print("[solver.py] Applying exponential map...")
         # print(f'[solver.py][before exp_map] y:\n {y}')
-        check_is_inf_nan(y)
-        check_on_hyperboloid(y)
+        # print_max(y)
+        # check_is_inf_nan(y)
+        # check_on_hyperboloid(y)
 
         # Perform the actual gradient descent step
         if isinstance(cf, HyperbolicKL):
@@ -303,8 +314,8 @@ def gradient_descent(
                 
                 # # XXX: Debug
                 # print(f'[solver.py][after exp_map] y: {y}')
-                check_is_inf_nan(y)
-                check_on_hyperboloid(y)
+                # check_is_inf_nan(y)
+                # check_on_hyperboloid(y)
 
             else:
                 inc = update * grad < 0.0
@@ -325,8 +336,9 @@ def gradient_descent(
 
                 # # XXX: Debug
                 # print(f'[solver.py][after exp_map] y: {res_exp}')
-                check_is_inf_nan(res_exp)
-                check_on_hyperboloid(res_exp)
+                # print_max(res_exp)
+                # check_is_inf_nan(res_exp)
+                # check_on_hyperboloid(res_exp)
 
                 res_log = np.empty((n_samples, n_components), dtype=ctypes.c_double)
                 tsne_impl.log_map(res_exp,
@@ -337,7 +349,7 @@ def gradient_descent(
 
                 # # XXX: Debug
                 # print(f'[solver.py][after log_map] y: {res_log}')
-                check_is_inf_nan(res_log)
+                # check_is_inf_nan(res_log)
 
                 update = res_log.ravel() * -1
 
@@ -513,13 +525,21 @@ def gradient_descent(
                 print("3")
                 break
 
-            emb_point_dists = np.linalg.norm(
-                y.reshape((n_samples, -1)), axis=1).max()
-            if size_tol is not None and emb_point_dists > size_tol:
-                if verbose >= 2:
-                    print("[t-SNE] Iteration %d: max size %f. Finished." %
-                          (i + 1, emb_point_dists))
-                print("4")
-                break
+                        
+            if size_tol is not None:
+                if hyperbolic_model == "poincare":
+                    emb_point_dists = np.linalg.norm(
+                        y.reshape((n_samples, -1)), axis=1).max()
+                elif hyperbolic_model == "lorentz":
+                    emb_point_dists = np.linalg.norm(from_lorentz(y.reshape((n_samples, -1))), axis=1).max()
+                
+                print(f"[emb_point_dists] {emb_point_dists}")
+
+                if emb_point_dists > size_tol:
+                    if verbose >= 2:
+                        print("[t-SNE] Iteration %d: max size %f. Finished." %
+                            (i + 1, emb_point_dists))
+                    print("4")
+                    break
 
     return y.reshape(n_samples, n_components), error, total_its - start_it

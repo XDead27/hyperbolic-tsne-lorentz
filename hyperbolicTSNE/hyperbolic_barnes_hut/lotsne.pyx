@@ -665,7 +665,9 @@ cdef class _OcTree:
         # Compute maximum squared distance of the root by intersecting with the hyperboloid
         width = get_max_dist_hyperboloid_sect(root.min_bounds, root.max_bounds)
         root.squared_max_width = max(root.squared_max_width, width*width)
-        # printf("[OcTree] Root max width is: %f\n", width)
+        # # XXX: Debug
+        # printf("[OcTree] Root max width is: %e\n", width)
+        # printf("[OcTree] Root bounds:\n\t[%e, %e, %e] -> [%e, %e, %e]\n", root.min_bounds[0], root.min_bounds[1], root.min_bounds[2], root.max_bounds[0], root.max_bounds[1], root.max_bounds[2])
 
         root.cell_id = 0
 
@@ -738,15 +740,15 @@ cdef class _OcTree:
         dist = distance_q(point, cell.barycenter)
         results[idx_d] = dist * dist
 
-        #XXX: Debug
-        if isnan(dist):
-            printf("[A}")
-        if isnan(point[0]):
-            printf("[B}")
-        if isnan(cell.barycenter[0]):
-            printf("[C}")
-        if isnan(results[idx]):
-            printf("[D}")
+        # #XXX: Debug
+        # if isnan(dist):
+        #     printf("[A}")
+        # if isnan(point[0]):
+        #     printf("[B}")
+        # if isnan(cell.barycenter[0]):
+        #     printf("[C}")
+        # if isnan(results[idx]):
+        #     printf("[D}")
 
         # Do not compute self interactions
         if duplicate and cell.is_leaf:
@@ -954,7 +956,7 @@ cpdef DTYPE_t distance_lorentz(DTYPE_t p0, DTYPE_t p1, DTYPE_t p2, DTYPE_t q0, D
         return 0.
 
     if -mb < 1.:
-        printf("[distance] HOWWWWWWWWWWWWWWW: %e\n", -mb)
+        printf("[distance] HOWWWWWWWWWWWWWWW: %e\n", fabs(mb + 1.))
 
     return acosh(-mb)
 
@@ -984,7 +986,7 @@ cdef void distance_grad_lorentz(DTYPE_t[3] u, DTYPE_t[3] v, DTYPE_t* res) nogil:
 cdef int project_to_tangent_space(DTYPE_t[3] p, DTYPE_t[3] grad, DTYPE_t* res) except -1 nogil:
     cdef DTYPE_t minkbil = minkowski_bilinear(p, grad)
 
-    check_on_hyperboloid(p)
+    # check_on_hyperboloid(p)
 
     res[0] = grad[0] + p[0] * minkbil
     res[1] = grad[1] + p[1] * minkbil
@@ -994,15 +996,15 @@ cdef int project_to_tangent_space(DTYPE_t[3] p, DTYPE_t[3] grad, DTYPE_t* res) e
     # err_p = fabs(minkowski_bilinear(p, p) + 1.)
     # err_g = fabs(minkowski_bilinear(p, res))
     # if err_g / err_p > 10.:
-    # if fabs(minkowski_bilinear(p, res)) > EPSILON:
+    # if err_g > EPSILON:
     #     printf("[project][point] %e %e %e\n", p[0], p[1], p[2])
     #     printf("[project][minkbil] %e\n", minkbil)
     #     printf("[project][cplm] %e\n", p[0]*grad[0])
     #     printf("[project][cplm] %e\n", p[1]*grad[1])
     #     printf("[project][cplm] %e\n", -p[2]*grad[2])
-    #     printf("[project] %e %e %e -> %e %e %e\n", grad[0], grad[1], grad[2], res[0], res[1], res[2])
+        # printf("[project] %e %e %e -> %e %e %e\n", grad[0], grad[1], grad[2], res[0], res[1], res[2])
     #     printf("[project][error point] %e\n", err_p)
-    #     printf("[project][error res] %e\n", err_g)
+        # printf("[project][error res] %e\n", err_g)
     # check_in_tangent_space(p, res)
 
 # Projects a vector from the tangent space back on the hyperboloid
@@ -1027,14 +1029,20 @@ cdef DTYPE_t exp_map_single_lorentz(DTYPE_t[3] p, DTYPE_t[3] v, DTYPE_t* res) ex
     for i in range(3):
         res[i] = coshval * p[i] + sinhval * v[i] / norm
 
-        if isnan(res[i]) or isinf(res[i]):
-            printf("point: %f %f %f\t grad: %e %e %e\n", p[0], p[1], p[2], v[0], v[1], v[2])
-            printf("s %f\t c %f\t n %f\t mb %f\n", sinhval, coshval, norm, vn)
-            with gil:
-                raise ValueError()
+        # if isnan(res[i]) or isinf(res[i]):
+        #     printf("point: %f %f %f\t grad: %e %e %e\n", p[0], p[1], p[2], v[0], v[1], v[2])
+        #     printf("s %f\t c %f\t n %f\t mb %f\n", sinhval, coshval, norm, vn)
+        #     with gil:
+        #         raise ValueError()
 
     # Precision adjustment
     res[LORENTZ_T] = compute_lorentz_t(res[LORENTZ_X_1], res[LORENTZ_X_2])
+
+    # # XXX: Debug
+    # if fabs(minkowski_bilinear(res, res) + 1.) > EPSILON:
+    #     printf("point: %e %e %e\t grad: %e %e %e\n", p[0], p[1], p[2], v[0], v[1], v[2])
+    #     printf("s %e\t c %e\t n %e\t mb %e\n", sinhval, coshval, norm, vn)
+    #     printf("proj err %e\n", fabs(minkowski_bilinear(p, v)))
 
     # check_on_hyperboloid(res) # Sanity check
     return minkowski_bilinear(res, res) + 1.
@@ -1274,7 +1282,7 @@ cdef double compute_gradient(float[:] timings,
         t2 = clock()
         timings[3] = ((float) (t2 - t1)) / CLOCKS_PER_SEC
 
-    check_is_inf_nan_all_n(pos_f, n_samples * n_dimensions)
+    # check_is_inf_nan_all_n(pos_f, n_samples * n_dimensions)
 
     for i in prange(start, n_samples, nogil=True, num_threads=num_threads, schedule='static'):
         for ax in range(n_dimensions):
@@ -1288,7 +1296,7 @@ cdef double compute_gradient(float[:] timings,
     # # XXX: Debug
     # printf("[compute_gradient][pos_f[0]]: %f %f %f\n", pos_f[0], pos_f[1], pos_f[2])
     # printf("[compute_gradient][tot_force[0]]: %f %f %f\n", tot_force[0][0], tot_force[0][1], tot_force[0][2])
-    check_is_inf_nan_all(tot_force)
+    # check_is_inf_nan_all(tot_force)
     
     free(neg_f)
     free(pos_f)
@@ -1318,7 +1326,8 @@ cdef double compute_gradient_positive(double[:] val_P,
         long n_samples = indptr.shape[0] - 1
         double C = 0.0
         double dij, qij, pij, mult, dij_sq
-        DTYPE_t[3] dist_grad_pos
+
+    cdef DTYPE_t* dist_grad_pos = <DTYPE_t*> malloc(sizeof(DTYPE_t) * n_dimensions * n_samples)
 
     with nogil, parallel(num_threads=num_threads):
         for i in prange(start, n_samples, schedule='static'):
@@ -1346,9 +1355,9 @@ cdef double compute_gradient_positive(double[:] val_P,
                 if compute_error:
                     qij = qij / sum_Q
                     C += pij * log(max(pij, FLOAT32_TINY) / max(qij, FLOAT32_TINY))
-                distance_grad_q(&pos_reference[i, 0], &pos_reference[j, 0], dist_grad_pos)
+                distance_grad_q(&pos_reference[i, 0], &pos_reference[j, 0], &dist_grad_pos[i * n_dimensions])
                 for ax in range(n_dimensions):
-                    pos_f[i * n_dimensions + ax] += mult * dist_grad_pos[ax]
+                    pos_f[i * n_dimensions + ax] += mult * dist_grad_pos[i * n_dimensions + ax]
     return C
 
 cdef double compute_gradient_negative(double[:, :] pos_reference,
@@ -1412,7 +1421,7 @@ cdef double compute_gradient_negative(double[:, :] pos_reference,
                     # Old Solution
                     mult = size * qijZ * qijZ
                 
-                #XXX: Debug
+                # XXX: Debug
                 if isnan(mult):
                     printf("[compute_gradient_negative][dist2s]: %f\n", dist2s)
 

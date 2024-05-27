@@ -1,4 +1,5 @@
 import os
+import sys
 import traceback
 
 from hyperbolicTSNE.util import find_last_embedding
@@ -9,8 +10,8 @@ from hyperbolicTSNE.initializations_ import to_lorentz, from_lorentz
 data_home = "datasets"
 log_path = "temp/poincare/"  # path for saving embedding snapshots
 
-# model = "poincare"
-model = "lorentz"
+model = "poincare"
+# model = "lorentz"
 n_components = 2 if model == "poincare" else 3
 only_animate = False
 seed = 42
@@ -46,7 +47,7 @@ opt_config = dict(
     exact=False,  # To use the quad tree for acceleration (like Barnes-Hut in the Euclidean setting) or to evaluate the gradient exactly
     area_split=False,  # To build or not build the polar quad tree based on equal area splitting or - alternatively - on equal length splitting
     n_iter_check=10,  # Needed for early stopping criterion
-    size_tol=None,  # Size of the embedding to be used as early stopping criterion
+    size_tol=0.999,  # Size of the embedding to be used as early stopping criterion
     hyperbolic_model=model,
 )
 
@@ -94,19 +95,17 @@ htsne = HyperbolicTSNE(
 # Compute the embedding
 try:
     hyperbolicEmbedding = htsne.fit_transform((D, V))
+    poincare_embedding = from_lorentz(hyperbolicEmbedding) if model == "lorentz" else hyperbolicEmbedding
 except ValueError:
-    hyperbolicEmbedding = find_last_embedding(log_path)
+    poincare_embedding = find_last_embedding(log_path)
     traceback.print_exc()
-
-
-poincare_embedding = from_lorentz(hyperbolicEmbedding)
 
 # Create a rendering of the embedding and save it to a file
 if not os.path.exists("results"):
     os.mkdir("results")
 fig = plot_poincare(poincare_embedding, dataLabels)
-fig.savefig(f"results/{dataset.name}_{model}.png")
+fig.savefig(f"results/{dataset.name}_{model}.png" if len(sys.argv) <= 1 else f"results/{sys.argv[1]}.png")
 
 # This renders a GIF animation of the embedding process. If FFMPEG is installed, the command also supports .mp4 as file ending 
-animate(logging_dict, dataLabels, f"results/{dataset.name}_{model}_ani.gif", fast=True, plot_ee=True)
+animate(logging_dict, dataLabels, f"results/{dataset.name}_{model}_ani.gif" if len(sys.argv) <= 1 else f"results/{sys.argv[1]}_ani.gif", fast=True, plot_ee=True)
 
