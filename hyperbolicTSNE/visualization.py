@@ -13,6 +13,7 @@ from matplotlib.animation import FuncAnimation
 from tqdm import tqdm
 
 from hyperbolicTSNE import Datasets
+from .initializations_ import from_lorentz
 
 
 def plot_poincare(points, labels=None):
@@ -23,6 +24,17 @@ def plot_poincare(points, labels=None):
                cmap="tab10")
     ax.add_patch(plt.Circle((0, 0), radius=1, edgecolor="b", facecolor="None"))
     ax.axis("square")
+    return fig
+
+def plot_lorentz(points, labels=None):
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+
+    ax.scatter(points[:, 0], points[:, 1], points[:, 2],
+               c=labels,
+               marker=".",
+               cmap="tab10")
+    
     return fig
 
 
@@ -282,7 +294,7 @@ def plot_poincare_zoomed(points, labels=None):
     return fig
 
 
-def animate(log_dict, labels, file_name, fast=False, is_hyperbolic=True, plot_ee=False, first_frame=None):
+def animate(log_dict, labels, file_name, fast=False, is_hyperbolic=True, plot_ee=False, first_frame=None, n_dims=2):
     scatter_data = [] if first_frame is None else [("-1", first_frame)]
     for subdir, dirs, files in os.walk(log_dict["log_path"]):
         for fi, file in enumerate(sorted(files, key=lambda x: int(x.split(", ")[0]))):
@@ -293,17 +305,44 @@ def animate(log_dict, labels, file_name, fast=False, is_hyperbolic=True, plot_ee
                     data = np.genfromtxt(total_file, delimiter=',')
                     scatter_data.append((str(fi), data))
 
-    fig, ax = plt.subplots()
+    fig = plt.figure()
+
+    if n_dims == 2:
+        ax = fig.add_subplot(111)
+    elif n_dims == 3:
+        ax = fig.add_subplot(111, projection='3d')
+        ax.view_init(elev=42, azim=35)
 
     _, data = scatter_data[0 if is_hyperbolic else -1]
+    surf = []
 
-    scatter = ax.scatter(data[:, 0], data[:, 1], c=labels, marker=".", linewidth=0.5, s=20, cmap="tab10")
+    convert = False
+    if n_dims == 2:
+        if data.shape[1] == 3:
+            convert = True
+            data = from_lorentz(data)
 
-    if is_hyperbolic:
-        uc = plt.Circle((0, 0), radius=1, edgecolor="b", facecolor="None")
-        ax.add_patch(uc)
+        scatter = ax.scatter(data[:, 0], data[:, 1], c=labels, marker=".", linewidth=0.5, s=20, cmap="tab10")
+        if is_hyperbolic:
+            uc = plt.Circle((0, 0), radius=1, edgecolor="b", facecolor="None")
+            ax.add_patch(uc)
 
-    ax.axis("square")
+        ax.axis("square")
+    elif n_dims == 3:
+        scatter = ax.scatter(data[:, 0], data[:, 1], data[:, 2], c=labels, marker=".", linewidth=0.5, s=20, cmap="tab10")
+
+        lims = np.array([np.min(data, axis=0), np.max(data, axis=0)])
+        ax.set_xlim([min(-0.1, lims[0, 0]), max(0.1, lims[1, 0])])
+        ax.set_ylim([min(-0.1, lims[0, 1]), max(0.1, lims[1, 1])])
+        ax.set_zlim([0., np.maximum(2., lims[1, 2])])
+
+        X = np.linspace(lims[0, 0], lims[1, 0], 30)
+        Y = np.linspace(lims[0, 1], lims[1, 1], 30)
+        X, Y = np.meshgrid(X, Y)
+        Z = np.sqrt(X**2 + Y**2 + 1)
+
+        # Plot the surface.
+        surf.append(ax.plot_surface(X, Y, Z, edgecolor='darkgreen', lw=0.5, rstride=8, cstride=8, alpha=0.05, zorder=0))
 
     print("Animation being saved to: " + file_name)
 
@@ -314,12 +353,35 @@ def animate(log_dict, labels, file_name, fast=False, is_hyperbolic=True, plot_ee
 
         sd = scatter_data[i]
 
-        scatter.set_offsets(sd[1])
+        if n_dims == 2:
+            csd = from_lorentz(sd[1]) if convert else sd[1]
+            scatter.set_offsets(csd)
+        elif n_dims == 3:
+            lims = np.array([np.min(sd[1], axis=0), np.max(sd[1], axis=0)])
+            xl = [np.minimum(-0.1, lims[0, 0]), np.maximum(0.1, lims[1, 0])]
+            yl = [np.minimum(-0.1, lims[0, 1]), np.maximum(0.1, lims[1, 1])]
+            ax.set_xlim(xl)
+            ax.set_ylim(yl)
+            ax.set_zlim([0., np.maximum(2., lims[1, 2])])
+
+            X = np.linspace(xl[0], xl[1], 30)
+            Y = np.linspace(yl[0], yl[1], 30)
+            X, Y = np.meshgrid(X, Y)
+            Z = np.sqrt(X**2 + Y**2 + 1)
+
+            # Plot the surface.
+            if len(surf) > 0:
+                surf[0].remove()
+                surf[0] = ax.plot_surface(X, Y, Z, edgecolor='darkgreen', lw=0.5, rstride=8, cstride=8, alpha=0.05, zorder=0)
+            else:
+                surf.append(ax.plot_surface(X, Y, Z, edgecolor='darkgreen', lw=0.5, rstride=8, cstride=8, alpha=0.05, zorder=0))
+
+            scatter._offsets3d = (sd[1][:, 0], sd[1][:, 1], sd[1][:, 2])
 
         ax.set_title(f'Scatter (epoch {sd[0]})')
         return scatter,
 
-    anim = FuncAnimation(fig, update, frames=len(scatter_data), interval=50, blit=True, save_count=50)
+    anim = FuncAnimation(fig, update, frames=len(scatter_data), interval=50, blit=(n_dims==2), save_count=50)
     anim.save(file_name)
 
     plt.clf()

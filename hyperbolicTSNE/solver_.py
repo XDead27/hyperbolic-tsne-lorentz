@@ -87,14 +87,15 @@ def log_iteration(logging_dict, logging_key, it, y, n_samples, n_components,
             print("No cost function class provided, cf and grad not computed")
 
     y = y.copy().reshape(n_samples, n_components)
-    if hyperbolic_model == "lorentz":
-        y = from_lorentz(y.copy())
 
-    y_bbox = list(np.concatenate((y.min(axis=0), y.max(axis=0))))
-    y_bbox = (
-        y_bbox[0], y_bbox[2], y_bbox[1], y_bbox[3], np.sqrt(
-            (y_bbox[0] - y_bbox[2]) ** 2 + (y_bbox[1] - y_bbox[3]) ** 2)
-    )
+    if hyperbolic_model == "poincare":
+        y_bbox = list(np.concatenate((y.min(axis=0), y.max(axis=0))))
+        y_bbox = (
+            y_bbox[0], y_bbox[2], y_bbox[1], y_bbox[3], np.sqrt(
+                (y_bbox[0] - y_bbox[2]) ** 2 + (y_bbox[1] - y_bbox[3]) ** 2)
+        )
+    elif hyperbolic_model == "lorentz":
+        y_bbox = None   # Not used, it should be a bounding cube
 
     logging_dict[logging_key]["its"].append(it)
     logging_dict[logging_key]["cfs"].append(cf_val)
