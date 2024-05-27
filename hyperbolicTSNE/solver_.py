@@ -16,9 +16,30 @@ from tqdm import tqdm
 
 from .cost_functions_ import HyperbolicKL
 from .hyperbolic_barnes_hut import tsne
+from .hyperbolic_barnes_hut import lotsne
+from .initializations_ import from_lorentz
 
 MACHINE_EPSILON = np.finfo(np.double).eps
 
+
+# XXX: Debug
+def check_is_inf_nan(x):
+    if np.isnan(x).any():
+        raise ValueError("NAN detected!")
+    if np.isinf(x).any():
+        raise ValueError("INF detected!")
+
+def check_on_hyperboloid(x):
+    if len(x.shape) != 2 or x.shape[1] != 3:
+        x = x.reshape(-1, 3)
+
+    lotsne.check_on_hyperboloid_all(x)
+
+def print_max(x):
+    if len(x.shape) != 2 or x.shape[1] != 3:
+        x = x.reshape(-1, 3)
+
+    print(f'[result max] {np.max(x, axis=0)}')
 
 def log_iteration(logging_dict, logging_key, it, y, n_samples, n_components,
                   cf=None, cf_params=None, cf_val=None, grad=None, grad_norm=None, log_arrays=False,
@@ -66,11 +87,15 @@ def log_iteration(logging_dict, logging_key, it, y, n_samples, n_components,
             print("No cost function class provided, cf and grad not computed")
 
     y = y.copy().reshape(n_samples, n_components)
-    y_bbox = list(np.concatenate((y.min(axis=0), y.max(axis=0))))
-    y_bbox = (
-        y_bbox[0], y_bbox[2], y_bbox[1], y_bbox[3], np.sqrt(
-            (y_bbox[0] - y_bbox[2]) ** 2 + (y_bbox[1] - y_bbox[3]) ** 2)
-    )
+
+    if hyperbolic_model == "poincare":
+        y_bbox = list(np.concatenate((y.min(axis=0), y.max(axis=0))))
+        y_bbox = (
+            y_bbox[0], y_bbox[2], y_bbox[1], y_bbox[3], np.sqrt(
+                (y_bbox[0] - y_bbox[2]) ** 2 + (y_bbox[1] - y_bbox[3]) ** 2)
+        )
+    elif hyperbolic_model == "lorentz":
+        y_bbox = None   # Not used, it should be a bounding cube
 
     logging_dict[logging_key]["its"].append(it)
     logging_dict[logging_key]["cfs"].append(cf_val)
@@ -161,7 +186,7 @@ def gradient_descent(
     n_iter_rescale: int, optional (default: np.inf)
         If a number n is given, then all n iterations (including the 0th one), the embedding is rescaled according to
         the scale given in the `rescale` parameter.
-    gradient_mask : numpy vector, optional (default: np.ones)
+    gradient_mask : numpy vecto    r, optional (default: np.ones)
         A vector of 0/1 entries. Apply the gradient update only where the mask is 1.
     logging_dict : dict, optional (default: None)
         A dictionary to store results obtained by the solver.
@@ -181,6 +206,8 @@ def gradient_descent(
     print("Running Gradient Descent, Verbosity: " + str(verbose))
 
     n_samples, n_components = y0.shape
+    tsne_impl = lotsne if hyperbolic_model == "lorentz" else tsne
+
     y = y0.copy().ravel()
     if callable(gradient_mask):
         gradient_mask = np.ones(y0.shape).ravel()
@@ -247,16 +274,13 @@ def gradient_descent(
         if compute_error or logging:  # TODO: add different levels of logging to avoid bottlenecks
             error, grad = cf.obj_grad(hyperbolic_model, y, **cf_params)
 
-            if isinstance(cf, HyperbolicKL):
-                # New Fix
-                if grad_scale_fix:
-                    grad = ((1. - np.linalg.norm(y.reshape(n_samples, 2), axis=1)
-                            ** 2) ** 2)[:, np.newaxis] * grad.reshape(n_samples, 2) / 4
-                    grad = grad.flatten()
+            if isinstance(cf, HyperbolicKL) and grad_scale_fix and hyperbolic_model == "poincare":
+                grad = ((1. - np.linalg.norm(y.reshape(n_samples, 2), axis=1)
+                        ** 2) ** 2)[:, np.newaxis] * grad.reshape(n_samples, 2) / 4
+                grad = grad.flatten()
 
-                grad_norm = linalg.norm(grad)
-            else:
-                grad_norm = linalg.norm(grad)
+            check_is_inf_nan(grad)
+            grad_norm = linalg.norm(grad)
         else:
             grad = cf.grad(hyperbolic_model, y, **cf_params)
             grad_norm = linalg.norm(grad)
@@ -266,14 +290,15 @@ def gradient_descent(
             if vanilla:
                 # y = Model.exp_map(y, -learning_rate * grad * gradient_mask, n_samples)
 
-                res = np.empty((n_samples, 2), dtype=ctypes.c_double)
-                tsne.exp_map(y.reshape(n_samples, 2).astype(ctypes.c_double),
+                res = np.empty((n_samples, n_components), dtype=ctypes.c_double)
+                tsne_impl.exp_map(y.reshape(n_samples, n_components).astype(ctypes.c_double),
                              (-learning_rate * grad * gradient_mask)
-                             .reshape(n_samples, 2)
+                             .reshape(n_samples, n_components)
                              .astype(ctypes.c_double),
                              res,
                              cf.params["params"]["num_threads"])
                 y = res.ravel()
+
             else:
                 inc = update * grad < 0.0
                 dec = np.invert(inc)
@@ -283,28 +308,29 @@ def gradient_descent(
                 grad *= gains
                 update = momentum * update - learning_rate * grad
                 # y = Model.exp_map(y, update * gradient_mask, n_samples)
-                res_exp = np.empty((n_samples, 2), dtype=ctypes.c_double)
-                tsne.exp_map(y.reshape(n_samples, 2).astype(ctypes.c_double),
+                res_exp = np.empty((n_samples, n_components), dtype=ctypes.c_double)
+                tsne_impl.exp_map(y.reshape(n_samples, n_components).astype(ctypes.c_double),
                              (update * gradient_mask)
-                             .reshape(n_samples, 2)
+                             .reshape(n_samples, n_components)
                              .astype(ctypes.c_double),
                              res_exp,
                              cf.params["params"]["num_threads"])
 
-                res_log = np.empty((n_samples, 2), dtype=ctypes.c_double)
-                tsne.log_map(res_exp,
-                             y.reshape(n_samples, 2).astype(ctypes.c_double),
+                res_log = np.empty((n_samples, n_components), dtype=ctypes.c_double)
+                tsne_impl.log_map(res_exp,
+                             y.reshape(n_samples, n_components).astype(ctypes.c_double),
                              res_log,
                              cf.params["params"]["num_threads"])
                 y = res_exp.ravel()
 
                 update = res_log.ravel() * -1
 
-            res_constrain = np.empty((n_samples, 2), dtype=ctypes.c_double)
-            tsne.constrain(y.reshape(n_samples, 2).astype(ctypes.c_double),
-                           res_constrain,
-                           cf.params["params"]["num_threads"])
-            y = res_constrain.ravel()
+            if hyperbolic_model == "poincare":
+                res_constrain = np.empty((n_samples, 2), dtype=ctypes.c_double)
+                tsne.constrain(y.reshape(n_samples, 2).astype(ctypes.c_double),
+                               res_constrain,
+                               cf.params["params"]["num_threads"])
+                y = res_constrain.ravel()
 
         elif vanilla:
             y = y - learning_rate * grad * gradient_mask
@@ -321,7 +347,7 @@ def gradient_descent(
         pbar.set_description(
             f"Gradient Descent error: {error:.5f} grad_norm: {grad_norm:.5e}")
 
-        # If a rescale value has been specified, rescale the embedding now to have the bounding box fit the given value.
+        # TODO: ?
         if rescale is not None and i % n_iter_rescale == 0:
             y = (y * gradient_mask_inverse) + ((y * gradient_mask) / (np.sqrt((np.max(
                 y[0::2]) - np.min(y[0::2])) ** 2 + (np.max(y[1::2]) - np.min(y[1::2])) ** 2) / rescale))
@@ -467,13 +493,18 @@ def gradient_descent(
                 print("3")
                 break
 
-            emb_point_dists = np.linalg.norm(
-                y.reshape((n_samples, -1)), axis=1).max()
-            if size_tol is not None and emb_point_dists > size_tol:
-                if verbose >= 2:
-                    print("[t-SNE] Iteration %d: max size %f. Finished." %
-                          (i + 1, emb_point_dists))
-                print("4")
-                break
+                        
+            if size_tol is not None:
+                if hyperbolic_model == "poincare":
+                    emb_point_dists = np.linalg.norm(
+                        y.reshape((n_samples, -1)), axis=1).max()
+                elif hyperbolic_model == "lorentz":
+                    emb_point_dists = np.linalg.norm(from_lorentz(y.reshape((n_samples, -1))), axis=1).max()
+                
+                if emb_point_dists > size_tol:
+                    if verbose >= 2:
+                        print("[t-SNE] Iteration %d: max size %f. Finished." %
+                            (i + 1, emb_point_dists))
+                    break
 
     return y.reshape(n_samples, n_components), error, total_its - start_it

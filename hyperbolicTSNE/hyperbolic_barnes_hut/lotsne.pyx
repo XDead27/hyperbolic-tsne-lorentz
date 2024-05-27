@@ -9,12 +9,12 @@
 import numpy as np
 cimport numpy as np
 from libc.stdio cimport printf
-from libc.math cimport sqrt, log, acosh, cosh, cos, sin, M_PI, atan2, tanh, atanh, isnan, fabs, fmin, fmax
+from libc.math cimport sqrt, log, acosh, cosh, cos, sin, M_PI, atan2, tanh, atanh, isnan, fabs, fmin, fmax, sinh
 from libc.stdlib cimport malloc, free, realloc
 from cython.parallel cimport prange, parallel
 from libc.string cimport memcpy
 from libc.stdint cimport SIZE_MAX
-from libc.math cimport isnan
+from libc.math cimport isnan, isinf
 
 np.import_array()
 
@@ -29,7 +29,8 @@ cdef float FLOAT32_TINY = np.finfo(np.float32).tiny
 cdef float FLOAT64_EPS = np.finfo(np.float64).eps
 cdef float FLOAT128_EPS = np.finfo(np.float128).eps
 
-cdef double EPSILON = 1e-5
+cdef double EPSILON = 1e-10
+cdef double EPSILON_CHECK = 1e-7
 cdef double MAX_TANH = 15.0
 cdef double BOUNDARY = 1 - EPSILON
 cdef int LORENTZ_T = 2
@@ -39,10 +40,6 @@ cdef double MACHINE_EPSILON = np.finfo(np.double).eps
 cdef int TAKE_TIMING = 1
 cdef int AREA_SPLIT = 0
 cdef int GRAD_FIX = 1
-
-cdef double clamp(double n, double lower, double upper) nogil:
-    cdef double t = lower if n < lower else n
-    return upper if t > upper else t
 
 ##################################################
 # OcTree
@@ -136,15 +133,85 @@ cdef extern from "numpy/arrayobject.h":
 cdef DTYPE_t sq_norm(DTYPE_t x, DTYPE_t y) nogil:
     return x * x + y * y
 
-cdef void poincare_to_lorentz(DTYPE_t y1, DTYPE_t y2, DTYPE_t* result) nogil:
+#
+# SANITY CHECKS
+#
+cdef int check_in_tangent_space(DTYPE_t[3] p, DTYPE_t[3] u) except -1 nogil:
+    cdef DTYPE_t mb = minkowski_bilinear(p, u)
+
+    if fabs(mb) > EPSILON_CHECK:
+        with gil:
+            raise ValueError(f'\np: {p[0]} {p[1]} {p[2]}\tu: {u[0]} {u[1]} {u[2]}\nmb: {mb}')
+
+cdef int check_on_hyperboloid(DTYPE_t[3] p) except -1 nogil:
+    cdef DTYPE_t sm = fabs(minkowski_bilinear(p, p) + 1)
+
+    if sm > EPSILON_CHECK:
+        with gil:
+            raise ValueError(f'p: {p[0]} {p[1]} {p[2]}\nsm: {sm}')
+
+cpdef int check_on_hyperboloid_all(DTYPE_t[:,:] ps) except -1 nogil:
+    cdef DTYPE_t[3] p
+    cdef SIZE_t n_samples = ps.shape[0]
+
+    for i in range(n_samples):
+        for j in range(3):
+            p[j] = ps[i, j]
+
+        check_on_hyperboloid(p)
+
+cdef int check_is_inf_nan(DTYPE_t[3] p) except -1 nogil:
+    check_is_inf_nan_all_n(p, 3)
+
+cdef int check_is_inf_nan_all_n(DTYPE_t* ps, int n) except -1 nogil:
+    for i in range(n):
+        if isnan(ps[i]):
+            with gil:
+                raise ValueError("NAN detected!")
+        if isinf(ps[i]):
+            with gil:
+                raise ValueError("INF detected!")
+
+
+cpdef int check_is_inf_nan_all(double[:, :] ps) except -1 nogil:
+    cdef SIZE_t n_samples = ps.shape[0]
+
+    for i in range(n_samples):
+        for j in range(3):
+            if isnan(ps[i, j]):
+                with gil:
+                    raise ValueError("NAN detected!")
+            if isinf(ps[i, j]):
+                with gil:
+                    raise ValueError("INF detected!")
+
+
+
+#
+# Helpers
+#
+
+# Computes the T value for a 2 dimensional point
+cpdef DTYPE_t compute_lorentz_t(DTYPE_t y1, DTYPE_t y2) nogil:
+    return sqrt(1. + y1 * y1 + y2 * y2)
+
+cpdef DTYPE_t poincare_to_lorentz(DTYPE_t y1, DTYPE_t y2, DTYPE_t[:] result) nogil:
     cdef:
         DTYPE_t term = 1 - y1 * y1 - y2 * y2
+        DTYPE_t mb_check
+        DTYPE_t[3] res_check
 
     result[LORENTZ_T] = 2 / term - 1
+    res_check[LORENTZ_T] = result[LORENTZ_T]
     result[LORENTZ_X_1] = 2 * y1 / term
+    res_check[LORENTZ_X_1] = result[LORENTZ_X_1]
     result[LORENTZ_X_2] = 2 * y2 / term
+    res_check[LORENTZ_X_2] = result[LORENTZ_X_2]
 
-cdef void lorentz_to_poincare(DTYPE_t* lp, DTYPE_t* result) nogil:
+    mb_check = minkowski_bilinear(res_check, res_check)
+    return fabs(mb_check + 1.)
+
+cpdef void lorentz_to_poincare(DTYPE_t[:] lp, DTYPE_t[:] result) nogil:
     result[0] = lp[LORENTZ_X_1] / (1 + lp[LORENTZ_T])
     result[1] = lp[LORENTZ_X_2] / (1 + lp[LORENTZ_T])
 
@@ -167,10 +234,6 @@ cdef DTYPE_t lorentz_factor(DTYPE_t sq_n) nogil:
 
 cdef DTYPE_t minkowski_bilinear(DTYPE_t[3] lp1, DTYPE_t[3] lp2) nogil:
     return lp1[LORENTZ_X_1] * lp2[LORENTZ_X_1] + lp1[LORENTZ_X_2] * lp2[LORENTZ_X_2] - lp1[LORENTZ_T] * lp2[LORENTZ_T]
-
-# Distance function for the hyperboloid model
-cdef DTYPE_t distance_lorentz(DTYPE_t[3] lp1, DTYPE_t[3] lp2) nogil:
-    return acosh( - minkowski_bilinear(lp1, lp2))
 
 # Checks if value lies in the upper polynomial and is in range 0, 1
 cdef bint _check_dist_param_value(DTYPE_t val, DTYPE_t z0, DTYPE_t z_d) nogil:
@@ -237,7 +300,6 @@ cdef DTYPE_t get_max_dist_hyperboloid_sect(DTYPE_t[3] la, DTYPE_t[3] lb) nogil:
     cdef DTYPE_t max_dist = 0.0, dist
     cdef int[24] cnts
 
-
     # Setup points (too lazy to think of algorithm)
     _copy_point(la, points[0]) # min bound
     _copy_point(la, points[1])
@@ -275,7 +337,7 @@ cdef DTYPE_t get_max_dist_hyperboloid_sect(DTYPE_t[3] la, DTYPE_t[3] lb) nogil:
         for j in range(i, 24):
             if cnts[j] == 0:
                 continue
-            dist = distance_lorentz(intersect[i], intersect[j])
+            dist = distance_q(intersect[i], intersect[j])
             if dist > max_dist:
                 max_dist = dist
 
@@ -306,7 +368,11 @@ cdef class _OcTree:
     cdef public SIZE_t n_points          # Total number of points
     cdef Cell* cells                     # Array of nodes
 
-    def __cinit__(self, int n_dimensions, int verbose):
+    # Debug fields
+    cdef bint take_timings
+    cdef float* timings
+
+    def __cinit__(self, int n_dimensions, int verbose, float[:] timings=None):
         """Constructor."""
         # Parameters of the tree
         self.n_dimensions = n_dimensions
@@ -319,6 +385,13 @@ cdef class _OcTree:
         self.capacity = 0
         self.n_points = 0
         self.cells = NULL
+
+        # Debug fields
+        if timings is not None:
+            self.take_timings = True
+            self.timings = &timings[0]
+        else:
+            self.take_timings = False
 
     def __dealloc__(self):
         """Destructor."""
@@ -334,26 +407,22 @@ cdef class _OcTree:
             return self._get_cell_ndarray()['is_leaf'][:self.cell_count]
 
     def build_tree(self, X):
-        """Build a tree from an array of points X."""
+        """
+        Build a tree from an array of points X.
+        X is Lorentz coordinates (X_1, X_2, X_T)
+        """
         cdef:
             int i
             DTYPE_t[3] pt
             DTYPE_t[3] min_bounds, max_bounds
 
         n_samples = X.shape[0]
-        LX = np.zeros((n_samples, 3))
         
-        # Change points from Poincare to Lorentz
-        for i in range(n_samples):
-            poincare_to_lorentz(X[i, 0], X[i, 1], pt)
-            LX[i, LORENTZ_T] = pt[LORENTZ_T]
-            LX[i, LORENTZ_X_1] = pt[LORENTZ_X_1]
-            LX[i, LORENTZ_X_2] = pt[LORENTZ_X_2]
-
         capacity = 100
         self._resize(capacity)
-        m = np.min(LX, axis=0)
-        M = np.max(LX, axis=0)
+        m = np.min(X, axis=0)
+        M = np.max(X, axis=0)
+
         # Scale the maximum to get all points strictly in the tree bounding box
         # The 3 bounds are for positive, negative and small values
         M = np.maximum(M * (1. + 1e-3 * np.sign(M)), M + 1e-3)
@@ -371,7 +440,7 @@ cdef class _OcTree:
         # Insert all points
         for i in range(n_samples):
             for j in range(self.n_dimensions):
-                pt[j] = LX[i, j]
+                pt[j] = X[i, j]
 
             self.insert_point(pt, i)
 
@@ -595,13 +664,15 @@ cdef class _OcTree:
         # Compute maximum squared distance of the root by intersecting with the hyperboloid
         width = get_max_dist_hyperboloid_sect(root.min_bounds, root.max_bounds)
         root.squared_max_width = max(root.squared_max_width, width*width)
-        # printf("[OcTree] Root max width is: %f\n", width)
+        # # XXX: Debug
+        # printf("[OcTree] Root max width is: %e\n", width)
+        # printf("[OcTree] Root bounds:\n\t[%e, %e, %e] -> [%e, %e, %e]\n", root.min_bounds[0], root.min_bounds[1], root.min_bounds[2], root.max_bounds[0], root.max_bounds[1], root.max_bounds[2])
 
         root.cell_id = 0
 
         self.cell_count += 1
 
-    cdef long summarize(self, DTYPE_t[2] point, DTYPE_t* results,
+    cdef long summarize(self, DTYPE_t[3] point, DTYPE_t* results,
                         float squared_theta=.5, SIZE_t cell_id=0, long idx=0
                         ) noexcept nogil:
         """Summarize the tree compared to a query point.
@@ -643,31 +714,27 @@ cdef class _OcTree:
             number of elements in the results array.
         """
         cdef:
-            int actual_dims = 2 # XXX: Modify later
-            int i, idx_d = idx + actual_dims 
+            int i, idx_d = idx + self.n_dimensions 
             bint duplicate = True
             DTYPE_t dist
             Cell* cell = &self.cells[cell_id]
             DTYPE_t[2] poincare_barycenter
 
-        # TODO: Either
         # (1) Change signature to receive Poincare point, then, for 
         #     each point in the tree, translate to Poincare model and
-        #     use distance_grad() (easy, not clean) (CHOSEN)
+        #     use distance_grad() (easy, not clean)
         # (2) Preserve signature, change both the argument point and all
         #     the ones contained in the tree to Poincare model and use
         #     distance_grad() (cleaner, but has to respect other constraints)
         # (3) (NON-PRIORITY) Preserve signature and use hyperboloid 
-        #     gradient and distance methods to summarize (cleaneast, hardest)
+        #     gradient and distance methods to summarize (cleaneast, hardest) (CHOSEN)
         
-        lorentz_to_poincare(cell.barycenter, poincare_barycenter)
-
         results[idx_d] = 0.
-        for i in range(actual_dims):
-            results[idx + i] = distance_grad_q(point, poincare_barycenter, i)
+        distance_grad_q(point, cell.barycenter, &results[idx])
+        for i in range(self.n_dimensions):
             duplicate &= fabs(results[idx + i]) <= EPSILON
 
-        dist = distance_q(point, poincare_barycenter)
+        dist = distance_q(point, cell.barycenter)
         results[idx_d] = dist * dist
 
         # Do not compute self interactions
@@ -682,7 +749,7 @@ cdef class _OcTree:
         if cell.is_leaf or (
                 (cell.squared_max_width / results[idx_d]) < squared_theta):
             results[idx_d + 1] = <DTYPE_t> cell.cumulative_size
-            return idx + actual_dims + 2
+            return idx + self.n_dimensions + 2
 
         else:
             # Recursively compute the summary in nodes
@@ -855,160 +922,148 @@ cdef class _OcTree:
 #################################################
 # Dist and Dist Grad functions
 #################################################
-# NON-PRIORITY TODO: Change these to the Lorentz model distance and gradient
+# Distance function on the hyperboloid model
 cdef DTYPE_t distance_q(DTYPE_t* u, DTYPE_t* v) nogil:
-    return distance(u[0], u[1], v[0], v[1])
+    return distance_lorentz(u, v)
 
-# Distance gradient on the poincare model (takes two pointers as arguments)
-cdef DTYPE_t distance_grad_q(DTYPE_t* u, DTYPE_t* v, int ax) nogil:
-    return distance_grad(u[0], u[1], v[0], v[1], ax)
+# Distance gradient on the hyperboloid model (takes two pointers as arguments)
+cdef void distance_grad_q(DTYPE_t[3] u, DTYPE_t[3] v, DTYPE_t* res) nogil:
+    distance_grad_lorentz(u, v, res)
 
-# Pointwise distance on the poincare model
-cpdef DTYPE_t distance(DTYPE_t u0, DTYPE_t u1, DTYPE_t v0, DTYPE_t v1) nogil:
-    if fabs(u0 - v0) <= EPSILON and fabs(u1 - v1) <= EPSILON:
+# Distance function for the hyperboloid model
+cdef DTYPE_t distance_lorentz(DTYPE_t[3] lp1, DTYPE_t[3] lp2) nogil:
+    cdef DTYPE_t mb = minkowski_bilinear(lp1, lp2)
+
+    if fabs(mb + 1.) <= EPSILON:
         return 0.
 
+    return acosh(-mb)
+
+cpdef DTYPE_t distance_lorentz_py(DTYPE_t p0, DTYPE_t p1, DTYPE_t p2, DTYPE_t q0, DTYPE_t q1, DTYPE_t q2) nogil:
+    cdef DTYPE_t[3] lp1
+    cdef DTYPE_t[3] lp2
+    lp1[0] = p0; lp1[1] = p1; lp1[2] = p2
+    lp2[0] = q0; lp2[1] = q1; lp2[2] = q2
+
+    return distance_lorentz(lp1, lp2) 
+
+# Distance gradient on the lorentz model, with respect to u 
+cdef void distance_grad_lorentz(DTYPE_t[3] u, DTYPE_t[3] v, DTYPE_t* res) nogil:
     cdef:
-        DTYPE_t uv2 = ((u0 - v0) * (u0 - v0)) + ((u1 - v1) * (u1 - v1))
-        DTYPE_t u_sq = clamp(u0 * u0 + u1 * u1, 0, BOUNDARY)
-        DTYPE_t v_sq = clamp(v0 * v0 + v1 * v1, 0, BOUNDARY)
-        DTYPE_t alpha = 1. - u_sq
-        DTYPE_t beta = 1. - v_sq
-        DTYPE_t result = acosh( 1. + 2. * uv2 / ( alpha * beta ) )
+        DTYPE_t minkbil = minkowski_bilinear(u, v)
+        DTYPE_t scalar = - 1. / sqrt(minkbil * minkbil - 1.)
+    
+    if fabs(minkbil + 1) <= EPSILON:
+        for i in range(3):
+            res[i] = 0.
+        return
 
-    return result
+    # if fabs(minkbil * minkbil - 1.) <= EPSILON:
+    if fabs(minkbil) - 1. <= EPSILON:
+        scalar = 0.
 
-# Distance gradient on the poincare model
-cdef DTYPE_t distance_grad(DTYPE_t u0, DTYPE_t u1, DTYPE_t v0, DTYPE_t v1, int ax) nogil:
-    if fabs(u0 - v0) <= EPSILON and fabs(u1 - v1) <= EPSILON:
-        return 0.
+    for i in range(3):
+        res[i] = scalar * v[i]
+        # if isnan(res[i]):
+        #     printf("scalar: %e\tminkbil: %e\tcond: %d\nu: %e %e %e\nv: %e %e %e\n", scalar, minkbil * minkbil - 1., fabs(minkbil * minkbil - 1.) <= EPSILON, u[0], u[1], u[2], v[0], v[1], v[2])
 
-    cdef:
-        DTYPE_t a = u0 - v0
-        DTYPE_t b = u1 - v1
-        DTYPE_t uv2 = a * a + b * b
+    # check_is_inf_nan(res)
 
-        DTYPE_t u_sq = clamp(u0 * u0 + u1 * u1, 0, BOUNDARY)
-        DTYPE_t v_sq = clamp(v0 * v0 + v1 * v1, 0, BOUNDARY)
-        DTYPE_t alpha = 1. - u_sq
-        DTYPE_t beta = 1. - v_sq
+# Project the gradient on the tangent space at point p on the hyperboloid
+cdef void project_to_tangent_space(DTYPE_t[3] p, DTYPE_t[3] grad, DTYPE_t* res) nogil:
+    cdef DTYPE_t minkbil = minkowski_bilinear(p, grad)
 
-        DTYPE_t gamma = 1. + (2. / (alpha * beta)) * uv2
-        DTYPE_t shared_scalar = 4. / fmax(beta * sqrt((gamma * gamma) - 1.), MACHINE_EPSILON)
+    # check_on_hyperboloid(p)
 
-        DTYPE_t u_scalar = (v_sq - 2. * (u0 * v0 + u1 * v1) + 1.) / (alpha * alpha)
-        DTYPE_t v_scalar = 1. / alpha
+    res[0] = grad[0] + p[0] * minkbil
+    res[1] = grad[1] + p[1] * minkbil
+    res[2] = grad[2] + p[2] * minkbil
 
-    if ax == 0:
-        return shared_scalar * (u_scalar * u0 - v_scalar * v0)
+# Projects a vector from the tangent space back on the hyperboloid
+cdef DTYPE_t exp_map_single_lorentz(DTYPE_t[3] p, DTYPE_t[3] v, DTYPE_t* res) nogil:
+    cdef DTYPE_t vn = fabs(minkowski_bilinear(v, v))
+    cdef DTYPE_t norm = sqrt(vn)
+    cdef DTYPE_t coshval
+    cdef DTYPE_t sinhval
+
+    # check_in_tangent_space(p, v)
+
+    if norm != 0:
+        coshval = cosh(norm)
+        sinhval = sinh(norm)
     else:
-        return shared_scalar * (u_scalar * u1 - v_scalar * v1)
+        coshval = 1.
+        sinhval = 0.
+        norm = 1.
 
-cdef void exp_map_single(double* x, double* v, double* res) nogil:
-    cdef double x_norm_sq, metric, v_norm, v_scalar
-    cdef double* y = <double*> malloc(sizeof(double) * 2)
+    for i in range(3):
+        res[i] = coshval * p[i] + sinhval * v[i] / norm
 
-    x_norm_sq = clamp(x[0] ** 2 + x[1] ** 2, 0, BOUNDARY)
+    # Precision adjustment: TODO: maybe only do it once the error is above EPSILON
+    res[LORENTZ_T] = compute_lorentz_t(res[LORENTZ_X_1], res[LORENTZ_X_2])
 
-    metric = 2. / (1. - x_norm_sq)
-    v_norm = sqrt(v[0] ** 2 + v[1] ** 2)
+    # check_on_hyperboloid(res) # Sanity check
+    return minkowski_bilinear(res, res) + 1.
 
-    v_scalar = tanh(clamp((metric * v_norm) / 2., -MAX_TANH, MAX_TANH))
+# Applies exp_map_single_lorentz for all points in p and vectors in v
+cpdef void exp_map(DTYPE_t[:, :] p, DTYPE_t[:, :] v, DTYPE_t[:, :] res, int num_threads) nogil:
+    cdef DTYPE_t* exp_map_res = <DTYPE_t*> malloc(sizeof(DTYPE_t) * 3)
+    cdef DTYPE_t max_err = 0., max_err_p = 0., max_err_t = 0., err
 
-    for j in range(2):
-        y[j] = (v[j] / v_norm) * v_scalar
 
-    mobius_addition(x, y, res)
-    free(y)
+    for i in range(p.shape[0]):
+        err = exp_map_single_lorentz(&p[i, 0], &v[i, 0], exp_map_res)
+        
+        # max_err = max(max_err, err)
+        # err = fabs(minkowski_bilinear(&p[i, 0], &p[i, 0]) + 1.)
+        # max_err_p = max(max_err_p, err)
+        # max_err_t = max(max_err_t, fabs(minkowski_bilinear(&p[i, 0], &v[i, 0])))
 
-cpdef void exp_map(double[:, :] x, double[:, :] v, double[:, :] out, int num_threads) nogil:
-    cdef double* exp_map_res = <double*> malloc(sizeof(double) * 2)
+        for j in range(3):
+            res[i, j] = exp_map_res[j]
 
-    for i in range(x.shape[0]):
-        exp_map_single(&x[i, 0], &v[i, 0], exp_map_res)
-
-        for j in range(2):
-            out[i, j] = exp_map_res[j]
-
+    # # XXX: Debug
+    # printf("[exp_map] Input error: %e\n", max_err_p)
+    # printf("[exp_map] Tangent space error: %e\n", max_err_t)
+    # printf("[exp_map] Max Projection Error: %e\n", max_err)
     free(exp_map_res)
 
-cdef void mobius_addition(double* x, double* y, double* res) nogil:
-    cdef double y_norm_sq, x_norm_sq, x_scalar, y_scalar, r_term, denominator
+# Compute the logarithmic map on the hyperboloid
+cdef void log_map_single_lorentz(DTYPE_t[3] p, DTYPE_t[3] q, DTYPE_t* res) nogil:
+    cdef DTYPE_t beta = - minkowski_bilinear(p, q)
+    cdef DTYPE_t mult = acosh(beta) / sqrt(beta * beta - 1)
 
-    x_norm_sq = clamp(x[0] ** 2 + x[1] ** 2, 0, BOUNDARY)
-    y_norm_sq = y[0] ** 2 + y[1] ** 2
+    if fabs(beta*beta - 1) <= EPSILON:
+        mult = 1.
 
-    r_term = 1. + 2. * (x[0] * y[0] + x[1] * y[1])
+    for i in range(3):
+        res[i] = q[i] - beta * p[i]
 
-    x_scalar = (r_term + y_norm_sq)
-    y_scalar = (1. - x_norm_sq)
-
-    denominator = r_term + x_norm_sq * y_norm_sq
-
-    for i in range(2):
-        res[i] = (x_scalar * x[i] + y_scalar * y[i]) / denominator
-
-cdef void log_map_single(double* x, double* y, double* res) nogil:
-    cdef double x_norm_sq, metric, y_scalar
-
-    x_norm_sq = clamp(x[0] ** 2 + x[1] ** 2, 0, BOUNDARY)
-
-    metric = 2. / (1. - x_norm_sq)
-
-    cdef double* u = <double*> malloc(sizeof(double) * 2)
-    for j in range(2):
-        u[j] = -x[j]
-
-    cdef double* mobius_res = <double *> malloc(sizeof(double) * 2)
-    mobius_addition(u, y, mobius_res)
-
-    free(u)
-
-    mob_add_norm = sqrt(mobius_res[0] ** 2 + mobius_res[1] ** 2)
-    y_scalar = atanh(fmin(mob_add_norm, 1. - EPSILON))
-
-    for j in range(2):
-        res[j] = (2. / metric) * y_scalar * (mobius_res[j] / mob_add_norm)
-
-    free(mobius_res)
-
-cpdef void log_map(double[:, :] x, double[:, :] y, double[:, :] out, int num_threads) nogil:
-    cdef double* log_map_res = <double*> malloc(sizeof(double) * 2)
+# Applies log_map_single_lorentz for every pair of points in x and y
+cpdef void log_map(DTYPE_t[:, :] x, DTYPE_t[:, :] y, DTYPE_t[:, :] out, int num_threads) nogil:
+    cdef DTYPE_t* log_map_res = <DTYPE_t*> malloc(sizeof(DTYPE_t) * 3)
 
     for i in range(x.shape[0]):
-        log_map_single(&x[i, 0], &y[i, 0], log_map_res)
+        log_map_single_lorentz(&x[i, 0], &y[i, 0], log_map_res)
 
-        for j in range(2):
+        for j in range(3):
             out[i, j] = log_map_res[j]
 
     free(log_map_res)
 
-cpdef void constrain(double[:, :] y, double[:, :] out, int num_threads) nogil:
-    for i in range(y.shape[0]):
-        point_norm = sqrt(y[i, 0] ** 2 + y[i, 1] ** 2)
+def distance_grad_py(double[:] u, double[:] v):
+    cdef DTYPE_t[3] res
+    cdef DTYPE_t[3] us = [u[0], u[1], u[2]]
+    cdef DTYPE_t[3] vs = [v[0], v[1], v[2]]
 
-        for j in range(2):
-            if point_norm >= BOUNDARY:
-                out[i, j] = (y[i, j] / point_norm) - EPSILON
-            else:
-                out[i, j] = y[i, j]
-
-cpdef void poincare_dists(double[:, :] y, double[:, :] out) nogil:
-    cdef:
-        long i, j
-
-    with nogil, parallel(num_threads=12):
-        for i in prange(0, y.shape[0], schedule='static'):
-            for j in range(0, y.shape[0]):
-                if i == j:
-                    continue
-                out[i, j] = distance(y[i, 0], y[i, 1], y[j, 0], y[j, 1])
-
-def distance_grad_py(double[:] u, double[:] v, int ax):
-    return distance_grad(u[0], u[1], v[0], v[1], ax)
+    distance_grad_q(us, vs, res)
+    return res
 
 def distance_py(double[:] u, double[:] v):
-    return distance(u[0], u[1], v[0], v[1],)
+    cdef DTYPE_t[3] us = [u[0], u[1], u[2]]
+    cdef DTYPE_t[3] vs = [v[0], v[1], v[2]]
+
+    return distance_q(us, vs)
 
 
 #######################################
@@ -1033,13 +1088,14 @@ cdef double exact_compute_gradient(float[:] timings,
         long i, coord
         int ax
         long n_samples = pos_reference.shape[0]
-        int n_dimensions = 2 # XXX: Magic number
+        int n_dimensions = pos_reference.shape[1]
         double sQ
         double error
         clock_t t1 = 0, t2 = 0
 
     cdef double* neg_f = <double*> malloc(sizeof(double) * n_samples * n_dimensions)
     cdef double* pos_f = <double*> malloc(sizeof(double) * n_samples * n_dimensions)
+    cdef DTYPE_t* tot_force_interm = <DTYPE_t*> malloc(sizeof(DTYPE_t) * n_samples * n_dimensions)
 
     if TAKE_TIMING:
         t1 = clock()
@@ -1064,10 +1120,12 @@ cdef double exact_compute_gradient(float[:] timings,
     for i in prange(start, n_samples, nogil=True, num_threads=num_threads, schedule='static'):
         for ax in range(n_dimensions):
             coord = i * n_dimensions + ax
-            tot_force[i, ax] = pos_f[coord] - (neg_f[coord] / sQ)
+            tot_force_interm[coord] = pos_f[coord] - (neg_f[coord] / sQ)
+        project_to_tangent_space(&pos_reference[i, 0], &tot_force_interm[i * n_dimensions], &tot_force[i, 0])
 
     free(neg_f)
     free(pos_f)
+    free(tot_force_interm)
     return error
 
 #######################################
@@ -1085,7 +1143,7 @@ cdef double exact_compute_gradient_negative(double[:, :] pos_reference,
                                       int num_threads) nogil:
     cdef:
         int ax
-        int n_dimensions = 2 # XXX: Magic number
+        int n_dimensions = pos_reference.shape[1]
         int offset = n_dimensions + 2
         long i, j, k, idx
         long n = stop - start
@@ -1095,8 +1153,11 @@ cdef double exact_compute_gradient_negative(double[:, :] pos_reference,
         double qijZ, sum_Q = 0.0
         long n_samples = indptr.shape[0] - 1
         double dij, qij, dij_sq
+        DTYPE_t* neg_f_axes
 
     with nogil, parallel(num_threads=num_threads):
+        neg_f_axes = <DTYPE_t*> malloc(sizeof(DTYPE_t) * n_samples * n_dimensions) # TODO: Save space by using only 3 dims
+
         for i in prange(start, n_samples, schedule='static'):
             # Init the gradient vector
             for ax in range(n_dimensions):
@@ -1105,7 +1166,7 @@ cdef double exact_compute_gradient_negative(double[:, :] pos_reference,
             for j in range(start, n_samples):
                 if i == j:
                     continue
-                dij = distance(pos_reference[i, 0], pos_reference[i, 1], pos_reference[j, 0], pos_reference[j, 1])
+                dij = distance_q(&pos_reference[i, 0], &pos_reference[j, 0])
                 dij_sq = dij * dij
 
                 qij = 1. / (1. + dij_sq)
@@ -1118,8 +1179,10 @@ cdef double exact_compute_gradient_negative(double[:, :] pos_reference,
                     mult = qij * qij
 
                 sum_Q += qij
+                distance_grad_q(&pos_reference[i, 0], &pos_reference[j, 0], &neg_f_axes[i * n_dimensions])
                 for ax in range(n_dimensions):
-                    neg_f[i * n_dimensions + ax] += mult * distance_grad(pos_reference[i, 0], pos_reference[i, 1], pos_reference[j, 0], pos_reference[j, 1], ax)
+                    neg_f[i * n_dimensions + ax] += mult * neg_f_axes[i * n_dimensions + ax]
+        free(neg_f_axes)
 
     # Put sum_Q to machine EPSILON to avoid divisions by 0
     sum_Q = max(sum_Q, FLOAT64_EPS)
@@ -1147,23 +1210,28 @@ cdef double compute_gradient(float[:] timings,
         long i, coord
         int ax
         long n_samples = pos_reference.shape[0]
-        int n_dimensions = 2 # XXX: Magic number
+        int n_dimensions = pos_reference.shape[1]
         double sQ
         double error
         clock_t t1 = 0, t2 = 0
 
     cdef double* neg_f = <double*> malloc(sizeof(double) * n_samples * n_dimensions)
     cdef double* pos_f = <double*> malloc(sizeof(double) * n_samples * n_dimensions)
+    cdef DTYPE_t* tot_force_interm = <DTYPE_t*> malloc(sizeof(DTYPE_t) * n_samples * n_dimensions)
 
     if TAKE_TIMING:
         t1 = clock()
-    # sQ = compute_gradient_negative(pos_reference, neighbors, indptr, neg_f, qt, dof, theta, start,
-    #                                stop, num_threads)
+
     sQ = compute_gradient_negative(pos_reference, neg_f, qt, dof, theta, start,
                                    stop, num_threads)
     if TAKE_TIMING:
         t2 = clock()
         timings[2] = ((float) (t2 - t1)) / CLOCKS_PER_SEC
+
+    # # XXX: Debug
+    # printf("[compute_gradient][neg_f[0]]: %f %f %f\n", neg_f[0], neg_f[1], neg_f[2])
+    # check_is_inf_nan_all_n(neg_f, n_samples * n_dimensions)
+    # printf("[compute_gradient][sQ]: %f\n", sQ)
 
     if TAKE_TIMING:
         t1 = clock()
@@ -1176,13 +1244,18 @@ cdef double compute_gradient(float[:] timings,
         t2 = clock()
         timings[3] = ((float) (t2 - t1)) / CLOCKS_PER_SEC
 
+    # check_is_inf_nan_all_n(pos_f, n_samples * n_dimensions)
+
     for i in prange(start, n_samples, nogil=True, num_threads=num_threads, schedule='static'):
         for ax in range(n_dimensions):
             coord = i * n_dimensions + ax
-            tot_force[i, ax] = pos_f[coord] - (neg_f[coord] / sQ)
+            tot_force_interm[coord] = pos_f[coord] - (neg_f[coord] / sQ)
+        project_to_tangent_space(&pos_reference[i, 0], &tot_force_interm[i * n_dimensions], &tot_force[i, 0])
 
+   
     free(neg_f)
     free(pos_f)
+    free(tot_force_interm)
     return error
 
 cdef double compute_gradient_positive(double[:] val_P,
@@ -1204,12 +1277,16 @@ cdef double compute_gradient_positive(double[:] val_P,
     # (unlike the non-nearest neighbors version of `compute_gradient_positive')
     cdef:
         int ax
-        long i, j, k
+        long i, j, k, coord
         long n_samples = indptr.shape[0] - 1
         double C = 0.0
         double dij, qij, pij, mult, dij_sq
+        DTYPE_t* dist_grad_pos
+
 
     with nogil, parallel(num_threads=num_threads):
+        dist_grad_pos = <DTYPE_t*> malloc(sizeof(DTYPE_t) * n_dimensions * n_samples)
+
         for i in prange(start, n_samples, schedule='static'):
             # Init the gradient vector
             for ax in range(n_dimensions):
@@ -1219,7 +1296,7 @@ cdef double compute_gradient_positive(double[:] val_P,
                 j = neighbors[k]
                 pij = val_P[k]
 
-                dij = distance(pos_reference[i, 0], pos_reference[i, 1], pos_reference[j, 0], pos_reference[j, 1])
+                dij = distance_q(&pos_reference[i, 0], &pos_reference[j, 0])
                 dij_sq = dij * dij
 
                 qij = 1. / (1. + dij_sq)
@@ -1235,8 +1312,12 @@ cdef double compute_gradient_positive(double[:] val_P,
                 if compute_error:
                     qij = qij / sum_Q
                     C += pij * log(max(pij, FLOAT32_TINY) / max(qij, FLOAT32_TINY))
+                distance_grad_q(&pos_reference[i, 0], &pos_reference[j, 0], &dist_grad_pos[i * n_dimensions])
                 for ax in range(n_dimensions):
-                    pos_f[i * n_dimensions + ax] += mult * distance_grad(pos_reference[i, 0], pos_reference[i, 1], pos_reference[j, 0], pos_reference[j, 1], ax)
+                    coord = i * n_dimensions + ax
+                    pos_f[coord] += mult * dist_grad_pos[coord]
+        free(dist_grad_pos)
+
     return C
 
 cdef double compute_gradient_negative(double[:, :] pos_reference,
@@ -1251,7 +1332,7 @@ cdef double compute_gradient_negative(double[:, :] pos_reference,
         stop = pos_reference.shape[0]
     cdef:
         int ax
-        int n_dimensions = 2 # XXX: Magic number
+        int n_dimensions = pos_reference.shape[1]
         int offset = n_dimensions + 2
         long i, j, idx
         long n = stop - start
@@ -1290,6 +1371,7 @@ cdef double compute_gradient_negative(double[:, :] pos_reference,
                 size = summary[j * offset + n_dimensions + 1]
                 qijZ = 1. / (1. + dist2s)  # 1/(1+dist)
 
+                
                 sum_Q += size * qijZ   # size of the node * q
 
                 if GRAD_FIX:
@@ -1298,7 +1380,7 @@ cdef double compute_gradient_negative(double[:, :] pos_reference,
                 else:
                     # Old Solution
                     mult = size * qijZ * qijZ
-
+                
                 for ax in range(n_dimensions):
                     neg_force[ax] += mult * summary[j * offset + ax]
 
@@ -1332,7 +1414,7 @@ def gradient(float[:] timings,
              bint grad_fix=0):
     cdef double C
     cdef int n
-    cdef _OcTree qt = _OcTree(pos_output.shape[1] + 1, verbose)
+    cdef _OcTree qt = _OcTree(pos_output.shape[1], verbose)
     cdef clock_t t1 = 0, t2 = 0
 
     global AREA_SPLIT
