@@ -307,11 +307,6 @@ cdef DTYPE_t get_max_dist_hyperboloid_sect(DTYPE_t[3] la, DTYPE_t[3] lb) nogil:
     cdef DTYPE_t max_dist = 0.0, dist
     cdef int[24] cnts
 
-
-    # XXX: Debug
-    # printf("A: %f %f %f\t", la[0], la[1], la[2])
-    # printf("B: %f %f %f\n", lb[0], lb[1], lb[2])
-
     # Setup points (too lazy to think of algorithm)
     _copy_point(la, points[0]) # min bound
     _copy_point(la, points[1])
@@ -730,8 +725,6 @@ cdef class _OcTree:
         # (3) (NON-PRIORITY) Preserve signature and use hyperboloid 
         #     gradient and distance methods to summarize (cleaneast, hardest) (CHOSEN)
         
-        # lorentz_to_poincare(cell.barycenter, poincare_barycenter)
-
         results[idx_d] = 0.
         distance_grad_q(point, cell.barycenter, &results[idx])
         for i in range(self.n_dimensions):
@@ -739,16 +732,6 @@ cdef class _OcTree:
 
         dist = distance_q(point, cell.barycenter)
         results[idx_d] = dist * dist
-
-        # #XXX: Debug
-        # if isnan(dist):
-        #     printf("[A}")
-        # if isnan(point[0]):
-        #     printf("[B}")
-        # if isnan(cell.barycenter[0]):
-        #     printf("[C}")
-        # if isnan(results[idx]):
-        #     printf("[D}")
 
         # Do not compute self interactions
         if duplicate and cell.is_leaf:
@@ -952,11 +935,8 @@ cpdef DTYPE_t distance_lorentz(DTYPE_t p0, DTYPE_t p1, DTYPE_t p2, DTYPE_t q0, D
     lp2[0] = q0; lp2[1] = q1; lp2[2] = q2
 
     mb = minkowski_bilinear(lp1, lp2)
-    if fabs(mb + 1) <= EPSILON:
+    if fabs(mb + 1.) <= EPSILON:
         return 0.
-
-    if -mb < 1.:
-        printf("[distance] HOWWWWWWWWWWWWWWW: %e\n", fabs(mb + 1.))
 
     return acosh(-mb)
 
@@ -977,13 +957,13 @@ cdef void distance_grad_lorentz(DTYPE_t[3] u, DTYPE_t[3] v, DTYPE_t* res) nogil:
 
     for i in range(3):
         res[i] = scalar * v[i]
-        if isnan(res[i]):
-            printf("scalar: %e\tminkbil: %e\tcond: %d\nu: %e %e %e\nv: %e %e %e\n", scalar, minkbil * minkbil - 1., fabs(minkbil * minkbil - 1.) <= EPSILON, u[0], u[1], u[2], v[0], v[1], v[2])
+        # if isnan(res[i]):
+        #     printf("scalar: %e\tminkbil: %e\tcond: %d\nu: %e %e %e\nv: %e %e %e\n", scalar, minkbil * minkbil - 1., fabs(minkbil * minkbil - 1.) <= EPSILON, u[0], u[1], u[2], v[0], v[1], v[2])
 
     # check_is_inf_nan(res)
 
 # Project the gradient on the tangent space at point p on the hyperboloid
-cdef int project_to_tangent_space(DTYPE_t[3] p, DTYPE_t[3] grad, DTYPE_t* res) except -1 nogil:
+cdef void project_to_tangent_space(DTYPE_t[3] p, DTYPE_t[3] grad, DTYPE_t* res) nogil:
     cdef DTYPE_t minkbil = minkowski_bilinear(p, grad)
 
     # check_on_hyperboloid(p)
@@ -992,25 +972,9 @@ cdef int project_to_tangent_space(DTYPE_t[3] p, DTYPE_t[3] grad, DTYPE_t* res) e
     res[1] = grad[1] + p[1] * minkbil
     res[2] = grad[2] + p[2] * minkbil
 
-    # # XXX: Debug
-    # err_p = fabs(minkowski_bilinear(p, p) + 1.)
-    # err_g = fabs(minkowski_bilinear(p, res))
-    # if err_g / err_p > 10.:
-    # if err_g > EPSILON:
-    #     printf("[project][point] %e %e %e\n", p[0], p[1], p[2])
-    #     printf("[project][minkbil] %e\n", minkbil)
-    #     printf("[project][cplm] %e\n", p[0]*grad[0])
-    #     printf("[project][cplm] %e\n", p[1]*grad[1])
-    #     printf("[project][cplm] %e\n", -p[2]*grad[2])
-        # printf("[project] %e %e %e -> %e %e %e\n", grad[0], grad[1], grad[2], res[0], res[1], res[2])
-    #     printf("[project][error point] %e\n", err_p)
-        # printf("[project][error res] %e\n", err_g)
-    # check_in_tangent_space(p, res)
-
 # Projects a vector from the tangent space back on the hyperboloid
-cdef DTYPE_t exp_map_single_lorentz(DTYPE_t[3] p, DTYPE_t[3] v, DTYPE_t* res) except -1 nogil:
+cdef DTYPE_t exp_map_single_lorentz(DTYPE_t[3] p, DTYPE_t[3] v, DTYPE_t* res) nogil:
     cdef DTYPE_t vn = fabs(minkowski_bilinear(v, v))
-    # cdef DTYPE_t vn = sq_norm_3d(v)
     cdef DTYPE_t norm
     cdef DTYPE_t coshval
     cdef DTYPE_t sinhval
@@ -1029,26 +993,14 @@ cdef DTYPE_t exp_map_single_lorentz(DTYPE_t[3] p, DTYPE_t[3] v, DTYPE_t* res) ex
     for i in range(3):
         res[i] = coshval * p[i] + sinhval * v[i] / norm
 
-        # if isnan(res[i]) or isinf(res[i]):
-        #     printf("point: %f %f %f\t grad: %e %e %e\n", p[0], p[1], p[2], v[0], v[1], v[2])
-        #     printf("s %f\t c %f\t n %f\t mb %f\n", sinhval, coshval, norm, vn)
-        #     with gil:
-        #         raise ValueError()
-
     # Precision adjustment
     res[LORENTZ_T] = compute_lorentz_t(res[LORENTZ_X_1], res[LORENTZ_X_2])
-
-    # # XXX: Debug
-    # if fabs(minkowski_bilinear(res, res) + 1.) > EPSILON:
-    #     printf("point: %e %e %e\t grad: %e %e %e\n", p[0], p[1], p[2], v[0], v[1], v[2])
-    #     printf("s %e\t c %e\t n %e\t mb %e\n", sinhval, coshval, norm, vn)
-    #     printf("proj err %e\n", fabs(minkowski_bilinear(p, v)))
 
     # check_on_hyperboloid(res) # Sanity check
     return minkowski_bilinear(res, res) + 1.
 
 # Applies exp_map_single_lorentz for all points in p and vectors in v
-cpdef int exp_map(DTYPE_t[:, :] p, DTYPE_t[:, :] v, DTYPE_t[:, :] res, int num_threads) except -1 nogil:
+cpdef void exp_map(DTYPE_t[:, :] p, DTYPE_t[:, :] v, DTYPE_t[:, :] res, int num_threads) nogil:
     cdef DTYPE_t* exp_map_res = <DTYPE_t*> malloc(sizeof(DTYPE_t) * 3)
     cdef DTYPE_t max_err = 0., max_err_p = 0., max_err_t = 0., err
 
@@ -1070,7 +1022,7 @@ cpdef int exp_map(DTYPE_t[:, :] p, DTYPE_t[:, :] v, DTYPE_t[:, :] res, int num_t
     # printf("[exp_map] Max Projection Error: %e\n", max_err)
     free(exp_map_res)
 
-# Compute the logarithmic map on the hyperboloid #TODO: idk if this is actually right
+# Compute the logarithmic map on the hyperboloid
 cdef void log_map_single_lorentz(DTYPE_t[3] p, DTYPE_t[3] q, DTYPE_t* res) nogil:
     cdef DTYPE_t beta = - minkowski_bilinear(p, q)
     cdef DTYPE_t mult = acosh(beta) / sqrt(beta * beta - 1)
@@ -1137,7 +1089,7 @@ cdef double exact_compute_gradient(float[:] timings,
 
     cdef double* neg_f = <double*> malloc(sizeof(double) * n_samples * n_dimensions)
     cdef double* pos_f = <double*> malloc(sizeof(double) * n_samples * n_dimensions)
-    cdef DTYPE_t* tot_force_interm = <DTYPE_t*> malloc(sizeof(DTYPE_t) * 3)
+    cdef DTYPE_t* tot_force_interm = <DTYPE_t*> malloc(sizeof(DTYPE_t) * n_samples * n_dimensions)
 
     if TAKE_TIMING:
         t1 = clock()
@@ -1162,11 +1114,12 @@ cdef double exact_compute_gradient(float[:] timings,
     for i in prange(start, n_samples, nogil=True, num_threads=num_threads, schedule='static'):
         for ax in range(n_dimensions):
             coord = i * n_dimensions + ax
-            tot_force_interm[ax] = pos_f[coord] - (neg_f[coord] / sQ)
-        project_to_tangent_space(&pos_reference[i, 0], tot_force_interm, &tot_force[i, 0]) # XXX: not thread safe, will not work
+            tot_force_interm[coord] = pos_f[coord] - (neg_f[coord] / sQ)
+        project_to_tangent_space(&pos_reference[i, 0], &tot_force_interm[i * n_dimensions], &tot_force[i, 0]) # XXX: not thread safe, will not work
 
     free(neg_f)
     free(pos_f)
+    free(tot_force_interm)
     return error
 
 #######################################
@@ -1194,9 +1147,11 @@ cdef double exact_compute_gradient_negative(double[:, :] pos_reference,
         double qijZ, sum_Q = 0.0
         long n_samples = indptr.shape[0] - 1
         double dij, qij, dij_sq
-        DTYPE_t[3] neg_f_axes #XXX: n dims
+        DTYPE_t* neg_f_axes
 
     with nogil, parallel(num_threads=num_threads):
+        neg_f_axes = <DTYPE_t*> malloc(sizeof(DTYPE_t) * n_samples * n_dimensions)
+
         for i in prange(start, n_samples, schedule='static'):
             # Init the gradient vector
             for ax in range(n_dimensions):
@@ -1218,9 +1173,10 @@ cdef double exact_compute_gradient_negative(double[:, :] pos_reference,
                     mult = qij * qij
 
                 sum_Q += qij
-                distance_grad_q(&pos_reference[i, 0], &pos_reference[j, 0], neg_f_axes)
+                distance_grad_q(&pos_reference[i, 0], &pos_reference[j, 0], &neg_f_axes[i * n_dimensions])
                 for ax in range(n_dimensions):
-                    neg_f[i * n_dimensions + ax] += mult * neg_f_axes[ax]
+                    neg_f[i * n_dimensions + ax] += mult * neg_f_axes[i * n_dimensions + ax]
+        free(neg_f_axes)
 
     # Put sum_Q to machine EPSILON to avoid divisions by 0
     sum_Q = max(sum_Q, FLOAT64_EPS)
@@ -1288,16 +1244,9 @@ cdef double compute_gradient(float[:] timings,
         for ax in range(n_dimensions):
             coord = i * n_dimensions + ax
             tot_force_interm[coord] = pos_f[coord] - (neg_f[coord] / sQ)
-
-    
-    for i in prange(start, n_samples, nogil=True, num_threads=num_threads, schedule='static'):
         project_to_tangent_space(&pos_reference[i, 0], &tot_force_interm[i * n_dimensions], &tot_force[i, 0])
-    
-    # # XXX: Debug
-    # printf("[compute_gradient][pos_f[0]]: %f %f %f\n", pos_f[0], pos_f[1], pos_f[2])
-    # printf("[compute_gradient][tot_force[0]]: %f %f %f\n", tot_force[0][0], tot_force[0][1], tot_force[0][2])
-    # check_is_inf_nan_all(tot_force)
-    
+
+   
     free(neg_f)
     free(pos_f)
     free(tot_force_interm)
@@ -1326,10 +1275,12 @@ cdef double compute_gradient_positive(double[:] val_P,
         long n_samples = indptr.shape[0] - 1
         double C = 0.0
         double dij, qij, pij, mult, dij_sq
+        DTYPE_t* dist_grad_pos
 
-    cdef DTYPE_t* dist_grad_pos = <DTYPE_t*> malloc(sizeof(DTYPE_t) * n_dimensions * n_samples)
 
     with nogil, parallel(num_threads=num_threads):
+        dist_grad_pos = <DTYPE_t*> malloc(sizeof(DTYPE_t) * n_dimensions * n_samples)
+
         for i in prange(start, n_samples, schedule='static'):
             # Init the gradient vector
             for ax in range(n_dimensions):
@@ -1358,6 +1309,8 @@ cdef double compute_gradient_positive(double[:] val_P,
                 distance_grad_q(&pos_reference[i, 0], &pos_reference[j, 0], &dist_grad_pos[i * n_dimensions])
                 for ax in range(n_dimensions):
                     pos_f[i * n_dimensions + ax] += mult * dist_grad_pos[i * n_dimensions + ax]
+        free(dist_grad_pos)
+
     return C
 
 cdef double compute_gradient_negative(double[:, :] pos_reference,

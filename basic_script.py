@@ -10,8 +10,8 @@ from hyperbolicTSNE.initializations_ import to_lorentz, from_lorentz
 data_home = "datasets"
 log_path = "temp/poincare/"  # path for saving embedding snapshots
 
-model = "poincare"
-# model = "lorentz"
+# model = "poincare"
+model = "lorentz"
 n_components = 2 if model == "poincare" else 3
 only_animate = False
 seed = 42
@@ -31,23 +31,23 @@ dataX, dataLabels, D, V, _ = load_data(
 
 exaggeration_factor = 12  # Just like regular t-SNE, we use early exaggeration with a factor of 12
 # learning_rate = (dataX.shape[0] * 1) / (exaggeration_factor * 1000)  # We adjust the learning rate to the hyperbolic setting
-learning_rate = (dataX.shape[0] * 1) / (exaggeration_factor * 1000)
+learning_rate = (dataX.shape[0] * 1) / (exaggeration_factor * 5)
 ex_iterations = 250  # The embedder is to execute 250 iterations of early exaggeration, ...
 main_iterations = 750  # ... followed by 750 iterations of non-exaggerated gradient descent.
 
 opt_config = dict(
-    learning_rate_ex=learning_rate,  # learning rate during exaggeration
+    learning_rate_ex=learning_rate / 12,  # learning rate during exaggeration
     learning_rate_main=learning_rate,  # learning rate main optimization 
     exaggeration=exaggeration_factor, 
     exaggeration_its=ex_iterations, 
     gradientDescent_its=main_iterations, 
     vanilla=False,  # if vanilla is set to true, regular gradient descent without any modifications is performed; for  vanilla set to false, the optimization makes use of momentum and gains
-    momentum_ex=0.5,  # Set momentum during early exaggeration to 0.5
-    momentum=0.8,  # Set momentum during non-exaggerated gradient descent to 0.8
+    momentum_ex=0.35,  # Set momentum during early exaggeration to 0.5
+    momentum=0.6,  # Set momentum during non-exaggerated gradient descent to 0.8
     exact=False,  # To use the quad tree for acceleration (like Barnes-Hut in the Euclidean setting) or to evaluate the gradient exactly
     area_split=False,  # To build or not build the polar quad tree based on equal area splitting or - alternatively - on equal length splitting
     n_iter_check=10,  # Needed for early stopping criterion
-    size_tol=0.999,  # Size of the embedding to be used as early stopping criterion
+    size_tol=0.97,  # Size of the embedding to be used as early stopping criterion
     hyperbolic_model=model,
 )
 
