@@ -20,6 +20,8 @@ import json
 import traceback
 from itertools import product
 from pathlib import Path
+import os 
+import pandas as pd
 
 import numpy as np
 from scipy.sparse import issparse, save_npz
@@ -209,3 +211,16 @@ for dataset in datasets:  # Iterate over the data sets
                         ])
 
                     print()
+
+# Combine overview parts
+dfs = []
+for root, dirs, files in os.walk(BASE_DIR):
+    for file in files:
+        if file.endswith("_part.csv"):
+            file_path = os.path.join(root, file)
+            df = pd.read_csv(file_path)
+            dfs.append(df)
+
+combined_dfs = pd.concat(dfs, ignore_index=True)
+print(f"Saving overview file to {BASE_DIR + '/overview.csv'}")
+combined_dfs.to_csv(BASE_DIR + "/overview.csv", index=False)
