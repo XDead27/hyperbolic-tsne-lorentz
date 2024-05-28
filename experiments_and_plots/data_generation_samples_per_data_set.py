@@ -29,6 +29,8 @@ from hyperbolicTSNE import Datasets, load_data, initialization, hd_matrix, Seque
 from hyperbolicTSNE.util import find_last_embedding
 from hyperbolicTSNE.visualization import plot_poincare
 
+from configs import TSNEConfigs
+
 
 #################################
 # GENERAL EXPERIMENT PARAMETERS #
@@ -53,18 +55,14 @@ hd_params = {"perplexity": PERP}
 datasets = [
     # Datasets.LUKK,
     Datasets.MYELOID8000,
-    Datasets.PLANARIA,
-    Datasets.MNIST,
-    Datasets.C_ELEGANS,
+    # Datasets.PLANARIA,
+    # Datasets.MNIST,
+    # Datasets.C_ELEGANS,
     # Datasets.WORDNET
 ]
-tsne_types = ["accelerated", "exact"]  # the type "accelerated" uses the polar quad tree for acceleration, "exact"
-# uses no acceleration and runs in quadratic time per iteration
-splitting_strategies = ["equal_length"]  # the polar quad tree comes in two flavors: Splitting by equal
-# area and by equal length in the embedding space. The "equal_length" splitting shows better performance in our
-# experiments.
-models = ["poincare", "lorentz"]
 max_samples = 10000
+config_instance = TSNEConfigs()
+run_configs = [config_instance.config_accelerated_poincare, config_instance.config_accelerated_lorentz]
 
 ###################
 # EXPERIMENT LOOP #
@@ -95,20 +93,14 @@ for dataset in datasets:  # Iterate over the data sets
         method="pca"
     )
 
-    for config_id, config in enumerate(product(sample_sizes, tsne_types, splitting_strategies, models)):
+    for id, config in enumerate(product(sample_sizes, run_configs)):
 
-        sample_size, tsne_type, splitting_strategy, model = config
-
-        # We only have to run one version of exact t-SNE, so we use the combination "exact" + "equal_length" (which
-        # does not use the splitting property anyway since it is exact). Hence, we can skip the "equal_area" version
-        # here as it does not provide more data.
-        if tsne_type == "exact" and splitting_strategy == "equal_area":
-            continue
+        sample_size, tsne_config = config
 
         for run_n in range(RUNS):  # Run the same configuration multiple times to avaerage out random fluctuations
             # from the sampling
             
-            print(f"[experiment_grid] Processing {dataset}, run_id {run_n}, config_id ({config_id}): {config}")
+            print(f"[experiment_grid] Processing {dataset}, run_id {run_n}, config_id ({tsne_config['config_id']}): {config}")
 
             # Generate random sample
             idx = rng.choice(np.arange(n_samples), sample_size, replace=False)
@@ -121,42 +113,26 @@ for dataset in datasets:  # Iterate over the data sets
 
             D, V = hd_matrix(X=dataX_sample, hd_params=hd_params, knn_method=KNN_METHOD)  # Compute the NN matrix
 
-            LR = (dataX_sample.shape[0] * 1) / (EXAG * 1000)  # Compute the learning rate
+            opt_params = tsne_config["get_opt_params"](config_instance, dataX_sample.shape[0])
 
-            opt_params = SequentialOptimizer.sequence_poincare(
-                learning_rate_ex=LR,  # specify learning rate for the early exaggeration
-                learning_rate_main=LR,  # specify learning rate for the non-exaggerated gradient descent iterations
-                exaggeration=EXAG,
-                vanilla=VANILLA,
-                momentum_ex=0.5,  # momentum to be used during early exaggeration
-                momentum=0.8,  # momentum to be used during non-exaggerated gradient descent
-                exact=(tsne_type == "exact"),
-                area_split=(splitting_strategy == "equal_area"),
-                n_iter_check=10,  # Needed for early stopping criterion
-                hyperbolic_model=model,
-                size_tol=0.999  # Size of the embedding to be used as early stopping criterion
-            )
-
-            run_dir = Path(f"{BASE_DIR}/{dataset.name}/size_{sample_size}/configuration_{config_id}/run_{run_n}/")
+            run_dir = Path(f"{BASE_DIR}/{dataset.name}/size_{sample_size}/configuration_{tsne_config['config_id']}/run_{run_n}/")
 
             if run_dir.exists():
                 # Skip already computed embeddings
                 print(f"[experiment_grid] - Exists so not computing it: {run_dir}")
 
-            else:                
+            else:
                 run_dir.mkdir(parents=True, exist_ok=True)
 
                 params = {
-                    "lr": LR,
+                    "name": tsne_config['name'],
                     "perplexity": PERP,
                     "seed": SEED,
                     "sample_size": int(sample_size),
-                    "tsne_type": tsne_type,
-                    "splitting_strategy": splitting_strategy,
-                    "model": model
+                    **tsne_config['opt_params']
                 }
 
-                print(f"[experiment_grid] - Starting configuration {config_id} with dataset {dataset.name}: {params}")
+                print(f"[experiment_grid] - Starting configuration {tsne_config['config_id']} with dataset {dataset.name}: {params}")
 
                 opt_params["logging_dict"] = {
                     "log_path": str(run_dir.joinpath("embeddings"))

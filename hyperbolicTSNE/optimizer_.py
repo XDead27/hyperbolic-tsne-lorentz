@@ -14,7 +14,7 @@ from time import time
 
 from .solver_ import gradient_descent
 from .cost_functions_ import HyperbolicKL
-
+from .initializations_ import from_lorentz, to_lorentz
 
 def check_params(params):
     # Cost function params
@@ -193,6 +193,16 @@ class SequentialOptimizer:
         """
         return Y, V * exaggeration
 
+    # noinspection PyUnusedLocal
+    @staticmethod
+    def translate_poincare_to_lorentz(Y, V, cost_function):
+        return to_lorentz(Y), V
+
+    # noinspection PyUnusedLocal
+    @staticmethod
+    def translate_lorentz_to_poincare(Y, V, cost_function):
+        return from_lorentz(Y), V
+
     # Sequence param presets and blocks
     @classmethod
     def empty_sequence(cls, cf=HyperbolicKL, cf_config_params=None, cf_params=None):
@@ -267,6 +277,55 @@ class SequentialOptimizer:
         )
 
         template["sequence"][-1]["params"]["size_tol"] = size_tol        
+
+        return template
+
+    @classmethod
+    def sequence_lorentz_proj(cls, exaggeration_its=250, exaggeration=12, gradientDescent_its=750,
+                          n_iter_check=np.inf, threshold_cf=0., threshold_its=-1, threshold_check_size=-1, size_tol=None,
+                          learning_rate_ex=0.1, learning_rate_main=0.1, momentum_ex=0.5, momentum=0.8, vanilla=False, exact=True, calc_both=False, angle=0.5,
+                          area_split=False, grad_fix=False, grad_scale_fix=False, hyperbolic_model="lorentz"):
+        # Start with an empty sequence
+        cf_config_params = HyperbolicKL.exact_tsne() if exact else HyperbolicKL.bh_tsne()
+        cf_config_params["params"]["calc_both"] = calc_both
+        cf_config_params["params"]["area_split"] = area_split
+        cf_config_params["params"]["grad_fix"] = grad_fix
+
+        if not exact:
+            cf_config_params["params"]["angle"] = angle
+
+        template = SequentialOptimizer.empty_sequence(cf=HyperbolicKL, cf_config_params=cf_config_params)
+
+        template["sequence"].append({
+            "type": "processor", "function": SequentialOptimizer.translate_poincare_to_lorentz,
+            "params": {}
+        })
+
+        # Add the blocks necessary for early exaggeration
+        template["sequence"] = SequentialOptimizer.add_block_early_exaggeration(
+            template["sequence"], earlyExaggeration_its=exaggeration_its, momentum=momentum_ex, learning_rate=learning_rate_ex,
+            exaggeration=exaggeration, n_iter_check=n_iter_check,
+            threshold_cf=threshold_cf, threshold_its=threshold_its, threshold_check_size=threshold_check_size, grad_scale_fix=grad_scale_fix,
+            hyperbolic_model=hyperbolic_model
+        )
+
+        template["sequence"][-2]["params"]["vanilla"] = vanilla
+        template["sequence"][-2]["params"]["size_tol"] = size_tol
+
+        # Add the block for gradient descent
+        template["sequence"] = SequentialOptimizer.add_block_gradient_descent_with_rescale_and_gradient_mask(
+            template["sequence"], gradientDescent_its=gradientDescent_its, n_iter_check=n_iter_check,
+            threshold_cf=threshold_cf, threshold_its=threshold_its, threshold_check_size=threshold_check_size,
+            learning_rate=learning_rate_main, momentum=momentum, vanilla=vanilla, grad_scale_fix=grad_scale_fix,
+            hyperbolic_model=hyperbolic_model
+        )
+
+        template["sequence"][-1]["params"]["size_tol"] = size_tol
+
+        template["sequence"].append({
+            "type": "processor", "function": SequentialOptimizer.translate_lorentz_to_poincare,
+            "params": {}
+        })
 
         return template
 

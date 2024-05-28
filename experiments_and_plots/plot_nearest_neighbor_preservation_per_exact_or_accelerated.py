@@ -85,7 +85,7 @@ for dataset_dir in BASE_DIR.glob("*"):
                                 np.save(run_dir.joinpath("true_positives.npy"), true_positives)
 
                                 # Add points to plot
-                                ax.plot(precisions, recalls, label=f"{params['tsne_type']} {params['model']} {params['splitting_strategy']}")
+                                ax.plot(precisions, recalls, label=params['name'])
 
                 ax.set_xlabel("Precision")
                 ax.set_ylabel("Recall")
