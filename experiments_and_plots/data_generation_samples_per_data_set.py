@@ -56,10 +56,10 @@ hd_params = {"perplexity": PERP}
 # Variables
 datasets = [
     # Datasets.LUKK,
-    Datasets.MYELOID8000,
+    # Datasets.MYELOID8000,
     # Datasets.PLANARIA,
     # Datasets.MNIST,
-    # Datasets.C_ELEGANS,
+    Datasets.C_ELEGANS,
     # Datasets.WORDNET
 ]
 max_samples = 10000
@@ -83,7 +83,8 @@ for dataset in datasets:  # Iterate over the data sets
         knn_method=KNN_METHOD
     )
 
-    n_samples = min(max_samples, dataX.shape[0])
+    # n_samples = min(max_samples, dataX.shape[0])
+    n_samples = dataX.shape[0]
     sample_sizes = np.linspace(0, n_samples, num=SIZE_SAMPLES + 1)[1:].astype(int)  # Equally distribute sample sizes
     # across the available number of data points
 
@@ -136,9 +137,9 @@ for dataset in datasets:  # Iterate over the data sets
 
                 print(f"[experiment_grid] - Starting configuration {tsne_config['config_id']} with dataset {dataset.name}: {params}")
 
-                opt_params["logging_dict"] = {
-                    "log_path": str(run_dir.joinpath("embeddings"))
-                }
+                # opt_params["logging_dict"] = {
+                #     "log_path": str(run_dir.joinpath("embeddings"))
+                # }
 
                 # Save the high-dimensional neighborhood matrices for later use
                 json.dump(params, open(run_dir.joinpath("params.json"), "w"))
@@ -167,7 +168,8 @@ for dataset in datasets:  # Iterate over the data sets
                 except ValueError: 
 
                     error_title = "_error"
-                    res_hdeo_hyper = find_last_embedding(opt_params["logging_dict"]["log_path"])
+                    # res_hdeo_hyper = find_last_embedding(opt_params["logging_dict"]["log_path"])
+                    res_hdeo_hyper = None
                     traceback.print_exc(file=open(str(run_dir) + "traceback.txt", "w"))
 
                     print("[experiment_grid] - Run failed ...")
@@ -184,7 +186,7 @@ for dataset in datasets:  # Iterate over the data sets
                     fig.savefig(run_dir.joinpath(f"final_embedding{error_title}.png"))
                     plt.close(fig)
 
-                    np.save(run_dir.joinpath("logging_dict.npy"), opt_params["logging_dict"])
+                    # np.save(run_dir.joinpath("logging_dict.npy"), opt_params["logging_dict"])
 
                     # Write out timings csv
                     timings = np.array(hdeo_hyper.optimizer.cf.results)
