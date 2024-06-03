@@ -16,7 +16,7 @@ import numpy as np
 ####################
 # READING THE DATA #
 ####################
-results_path = Path("../results/samples_per_data_set/")
+results_path = Path("./results/samples_per_data_set/")
 df = pd.read_csv(results_path.joinpath("overview.csv"))
 timings_dfs = []
 for record in df.to_records():
@@ -39,11 +39,11 @@ del timings_dfs
 # Work with the "equal length" data, as this splitting technique proved to be more efficient, filtering by
 # "equal_length" contains both accelerated and exact data.
 plot_times_df = timings_df.copy()
-plot_times_df = plot_times_df[(plot_times_df.splitting_strategy == "equal_length")]
+# plot_times_df = plot_times_df[(plot_times_df.splitting_strategy == "equal_length")]
 
 # Filter out only the exact, i.e., non-accelerated data
 plot_times_df_exact = plot_times_df.copy()
-plot_times_df_exact = plot_times_df_exact[(plot_times_df_exact.tsne_type == "exact")]
+plot_times_df_exact = plot_times_df_exact[(plot_times_df_exact.name == "Quadtree Poincare")]
 
 # Print Min, Avg, Std, Max of the timings per dataset per size
 grouped = plot_times_df_exact.groupby(["dataset", "sample_size"])
@@ -55,7 +55,7 @@ print(grouped["total_time"].max())
 
 # Filter out only the accelerated data, i.e., the data using the polar quad tree
 plot_times_df_accelerated = plot_times_df.copy()
-plot_times_df_accelerated = plot_times_df_accelerated[(plot_times_df_accelerated.tsne_type == "accelerated")]
+plot_times_df_accelerated = plot_times_df_accelerated[(plot_times_df_accelerated.name == "Octree Lorentz")]
 
 # Print Min, Avg, Std, Max of the timings per dataset per size
 grouped = plot_times_df_accelerated.groupby(["dataset", "sample_size"])

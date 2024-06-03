@@ -85,10 +85,11 @@ class SequentialOptimizer:
 
     @Y.setter
     def Y(self, mat):
-        try:
-            self._y = mat.reshape(-1, self.n_components)
-        except AttributeError:
-            self._y = mat
+        # try:
+        #     self._y = mat.reshape(-1, self.n_components)
+        # except AttributeError:
+        #     self._y = mat
+        self._y = mat
 
     @property
     def V(self):

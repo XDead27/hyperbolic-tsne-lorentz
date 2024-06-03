@@ -54,9 +54,12 @@ datasets = [
     Datasets.C_ELEGANS,
     # Datasets.WORDNET,
 ]
-num_points = 10000
+num_points = 100000
 configs_instance = TSNEConfigs()
-run_configs = [configs_instance.config_accelerated_poincare, configs_instance.config_accelerated_lorentz]
+run_configs = [configs_instance.config_accelerated_poincare,
+               configs_instance.config_accelerated_lorentz,
+               configs_instance.config_exact_poincare,
+               configs_instance.config_exact_lorentz]
 
 ###################
 # EXPERIMENT LOOP #
@@ -142,7 +145,7 @@ for dataset in datasets:  # Iterate over the data sets
 
                 hdeo_hyper = HyperbolicTSNE(  # Initialize an embedding object
                     init=X_embedded_sample,
-                    n_components=X_embedded_sample.shape[1],
+                    n_components=tsne_config["data_num_components"],
                     metric="precomputed",
                     verbose=2,
                     opt_method=SequentialOptimizer,
