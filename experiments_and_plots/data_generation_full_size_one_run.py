@@ -26,14 +26,23 @@ from matplotlib import pyplot as plt
 from hyperbolicTSNE import Datasets, load_data, initialization, hd_matrix, SequentialOptimizer, HyperbolicTSNE
 from hyperbolicTSNE.util import find_last_embedding
 from hyperbolicTSNE.visualization import plot_poincare
-from configs import TSNEConfigs
+from configs import setup_experiment
 
 #################################
 # GENERAL EXPERIMENT PARAMETERS #
 #################################
 
-BASE_DIR = "./results/full_size_one_run"  # directory where results will be saved
-DATASETS_DIR = "./datasets"  # directory to read the data from
+ids = [
+    1000,
+    1100,
+    # 1010,
+    # 1110,
+]
+
+configs_instance, run_configs, paths = setup_experiment(ids)
+
+BASE_DIR = paths["results_path"] + "/full_size_one_run"
+DATASETS_DIR = paths["datasets_path"]
 
 # Constants
 SEED = 42  # seed to initialize random processes
@@ -48,18 +57,14 @@ hd_params = {"perplexity": PERP}
 # Variables
 datasets = [
     # Datasets.LUKK,
-    Datasets.MYELOID8000,
-    Datasets.PLANARIA,
+    # Datasets.MYELOID8000,
+    # Datasets.PLANARIA,
     Datasets.MNIST,
-    Datasets.C_ELEGANS,
+    # Datasets.C_ELEGANS,
     # Datasets.WORDNET,
 ]
 num_points = 100000
-configs_instance = TSNEConfigs()
-run_configs = [configs_instance.config_accelerated_poincare,
-               configs_instance.config_accelerated_lorentz,
-               configs_instance.config_exact_poincare,
-               configs_instance.config_exact_lorentz]
+
 
 ###################
 # EXPERIMENT LOOP #

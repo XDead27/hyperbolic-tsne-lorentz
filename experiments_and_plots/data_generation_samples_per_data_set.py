@@ -31,15 +31,22 @@ from hyperbolicTSNE import Datasets, load_data, initialization, hd_matrix, Seque
 from hyperbolicTSNE.util import find_last_embedding
 from hyperbolicTSNE.visualization import plot_poincare
 
-from configs import TSNEConfigs
+from configs import setup_experiment
 
 
 #################################
 # GENERAL EXPERIMENT PARAMETERS #
 #################################
 
-BASE_DIR = "./results/samples_per_data_set"  # dir where results will be saved
-DATASETS_DIR = "./datasets"  # directory to read the data from
+ids = [
+    1000,
+    1100,
+]
+
+config_instance, run_configs, paths = setup_experiment(ids)
+
+BASE_DIR = paths["results_path"] + "/samples_per_data_set"
+DATASETS_DIR = paths["datasets_path"]
 
 # Constants
 SEED = 42  # seed to initialize random processes
@@ -63,8 +70,7 @@ datasets = [
     # Datasets.WORDNET
 ]
 max_samples = 10000
-config_instance = TSNEConfigs()
-run_configs = [config_instance.config_accelerated_poincare, config_instance.config_accelerated_lorentz]
+
 
 ###################
 # EXPERIMENT LOOP #
@@ -155,7 +161,7 @@ for dataset in datasets:  # Iterate over the data sets
 
                 hdeo_hyper = HyperbolicTSNE(  # Initialize an embedding object
                     init=X_embedded_sample,
-                    n_components=X_embedded_sample.shape[1],
+                    n_components=tsne_config["data_num_dimensions"],
                     metric="precomputed",
                     verbose=2,
                     opt_method=SequentialOptimizer,

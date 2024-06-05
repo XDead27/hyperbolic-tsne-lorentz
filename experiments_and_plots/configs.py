@@ -2,10 +2,21 @@
 This file contains different configurations for experiments to be run on.
 """
 
+from dotenv import load_dotenv
+import os
+
 from hyperbolicTSNE import SequentialOptimizer
 
 
 class TSNEConfigs:
+    
+    def get_all_configs(self):
+        return [
+            self.config_accelerated_poincare,
+            self.config_exact_poincare,
+            self.config_accelerated_lorentz,
+            self.config_exact_lorentz,
+        ]
 
     """
     Poincare Quadtree Configuration
@@ -135,3 +146,31 @@ class TSNEConfigs:
         "get_opt_params": config_exact_lorentz_get_opt_params,
     }
 
+
+def find_config(ci, cfg):
+    for c in ci.get_all_configs():
+        if isinstance(cfg, str) and c["name"] == cfg:
+            return c
+        elif isinstance(cfg, int) and c["config_id"] == cfg:
+            return c
+
+
+def load_vars_env():
+    load_dotenv()
+
+    return {
+        "results_path": os.getenv('RESULTS_DIR'),
+        "datasets_path": os.getenv('DATASETS_DIR'),
+    }
+
+
+def setup_experiment(cfgs_list):
+    if not isinstance(cfgs_list, list):
+        raise ValueError("Configs parameter has to be a list!")
+
+    cfgs = []
+    ci = TSNEConfigs()
+    for cfg in cfgs_list:
+        cfgs.append(find_config(ci, cfg))
+
+    return ci, cfgs, load_vars_env()
