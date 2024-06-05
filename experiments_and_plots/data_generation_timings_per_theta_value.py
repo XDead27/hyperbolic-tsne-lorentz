@@ -19,7 +19,7 @@ import numpy as np
 from matplotlib import pyplot as plt
 from scipy.sparse import issparse, save_npz
 
-from configs import TSNEConfigs
+from configs import setup_experiment
 
 from hyperbolicTSNE import Datasets, load_data, initialization, SequentialOptimizer, HyperbolicTSNE
 from hyperbolicTSNE.util import find_last_embedding
@@ -28,9 +28,15 @@ from hyperbolicTSNE.visualization import plot_poincare
 #################################
 # GENERAL EXPERIMENT PARAMETERS #
 #################################
+ids = [
+    1100,
+]
 
-BASE_DIR = "./results/timings_per_theta"  # dir where results will be saved
-DATASETS_DIR = "./datasets"  # directory to read the data from
+ci, cfgs, paths = setup_experiment(ids)
+cfg = cfgs[0]
+
+BASE_DIR = paths["results_path"] + "/timings_per_theta"
+DATASETS_DIR = paths["datasets_path"]
 
 # Constants
 SEED = 42  # seed to initialize random processes
@@ -52,9 +58,6 @@ datasets = [
     # Datasets.WORDNET
 ]
 thetas = [n / 20 for n in range(20, -1, -1)]  # The different theta values to be used in the acceleration experiment
-
-ci = TSNEConfigs()
-cfg = ci.config_accelerated_lorentz
 
 ###################
 # EXPERIMENT LOOP #
@@ -98,6 +101,7 @@ for dataset in datasets:  # Iterate over the data sets
             run_dir.mkdir(parents=True, exist_ok=True)
 
             params = {
+                "name": cfg["name"],
                 "perplexity": PERP,
                 "seed": SEED,
                 "sample_size": int(n_samples),

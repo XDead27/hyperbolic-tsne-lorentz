@@ -23,12 +23,20 @@ from hyperbolicTSNE import load_data, Datasets, SequentialOptimizer, initializat
 from hyperbolicTSNE.util import find_last_embedding
 from hyperbolicTSNE.visualization import plot_poincare
 
+from configs import setup_experiment
+
 #################################
 # GENERAL EXPERIMENT PARAMETERS #
 #################################
 
-BASE_DIR = "./results/nnp_per_theta_MNIST"
-DATASETS_DIR = "./datasets"  # directory to read the data from
+ids = [
+    1100,
+]
+ci, cfgs, paths = setup_experiment(ids)
+cfg = cfgs[0]
+
+BASE_DIR = paths["results_path"] + "/nnp_per_theta"
+DATASETS_DIR = paths["datasets_path"]  # directory to read the data from
 
 # Constants
 SEED = 42  # seed to initialize random processes
@@ -72,19 +80,8 @@ for theta in [x / 10 for x in range(0, 11, 1)]:  # Iterate over the different va
 
     print(f"[nnp_per_theta] Processing {dataset}, Theta: {theta}")
 
-    opt_params = SequentialOptimizer.sequence_poincare(
-        learning_rate_ex=LR,  # specify learning rate for the early exaggeration
-        learning_rate_main=LR,  # specify learning rate for the non-exaggerated gradient descent
-        exaggeration=EXAG,
-        vanilla=VANILLA,
-        momentum_ex=0.5,  # momentum to be used during early exaggeration
-        momentum=0.8,  # momentum to be used during non-exaggerated gradient descent
-        exact=False,
-        n_iter_check=10,  # Needed for early stopping criterion
-        size_tol=0.999,  # Size of the embedding to be used as early stopping criterion
-        angle=theta
-
-    )
+    cfg["opt_params"]["angle"] = theta
+    opt_params = cfg["get_opt_params"](ci, dataX.shape[0])
 
     run_dir = Path(f"{BASE_DIR}/theta_{theta}/")
 
@@ -95,17 +92,18 @@ for theta in [x / 10 for x in range(0, 11, 1)]:  # Iterate over the different va
         run_dir.mkdir(parents=True, exist_ok=True)
 
         params = {
-            "lr": LR,
+            "name": cfg["name"],
             "perplexity": PERP,
             "seed": SEED,
-            "theta": theta
+            "theta": theta,
+            "opt_params": cfg["opt_params"]
         }
 
         print(f"[nnp_per_theta] - Starting with Theta: {theta}")
 
-        opt_params["logging_dict"] = {
-            "log_path": str(run_dir.joinpath("embeddings"))
-        }
+        # opt_params["logging_dict"] = {
+        #     "log_path": str(run_dir.joinpath("embeddings"))
+        # }
 
         # Save the high-dimensional neighborhood matrices for later use
         json.dump(params, open(run_dir.joinpath("params.json"), "w"))
@@ -120,7 +118,7 @@ for theta in [x / 10 for x in range(0, 11, 1)]:  # Iterate over the different va
 
         hdeo_hyper = HyperbolicTSNE(  # Initialize an embedding object
             init=X_embedded,
-            n_components=X_embedded.shape[1],
+            n_components=cfg["data_num_components"],
             metric="precomputed",
             verbose=2,
             opt_method=SequentialOptimizer,
@@ -133,7 +131,8 @@ for theta in [x / 10 for x in range(0, 11, 1)]:  # Iterate over the different va
         except ValueError:
 
             error_title = "_error"
-            res_hdeo_hyper = find_last_embedding(opt_params["logging_dict"]["log_path"])
+            # res_hdeo_hyper = find_last_embedding(opt_params["logging_dict"]["log_path"])
+            res_hdeo_hyper = None
             traceback.print_exc(file=open(str(run_dir) + "traceback.txt", "w"))
 
             print("[nnp_per_theta] - Run failed ...")
@@ -150,7 +149,7 @@ for theta in [x / 10 for x in range(0, 11, 1)]:  # Iterate over the different va
             fig.savefig(run_dir.joinpath(f"final_embedding{error_title}.png"))
             plt.close(fig)
 
-            np.save(run_dir.joinpath("logging_dict.npy"), opt_params["logging_dict"])
+            # np.save(run_dir.joinpath("logging_dict.npy"), opt_params["logging_dict"])
 
             # Compute Precision and Recall values for the embedding
             _, precisions, recalls, _ = hyperbolic_nearest_neighbor_preservation(
