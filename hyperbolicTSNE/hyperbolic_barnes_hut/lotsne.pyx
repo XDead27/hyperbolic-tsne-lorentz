@@ -1007,26 +1007,20 @@ cdef DTYPE_t exp_map_single_lorentz(DTYPE_t[3] p, DTYPE_t[3] v, DTYPE_t* res) no
 
 # Applies exp_map_single_lorentz for all points in p and vectors in v
 cpdef void exp_map(DTYPE_t[:, :] p, DTYPE_t[:, :] v, DTYPE_t[:, :] res, int num_threads) nogil:
-    cdef DTYPE_t* exp_map_res = <DTYPE_t*> malloc(sizeof(DTYPE_t) * 3)
     cdef DTYPE_t max_err = 0., max_err_p = 0., max_err_t = 0., err
 
-
     for i in range(p.shape[0]):
-        err = exp_map_single_lorentz(&p[i, 0], &v[i, 0], exp_map_res)
+        err = exp_map_single_lorentz(&p[i, 0], &v[i, 0], &res[i, 0])
         
         # max_err = max(max_err, err)
         # err = fabs(minkowski_bilinear(&p[i, 0], &p[i, 0]) + 1.)
         # max_err_p = max(max_err_p, err)
         # max_err_t = max(max_err_t, fabs(minkowski_bilinear(&p[i, 0], &v[i, 0])))
 
-        for j in range(3):
-            res[i, j] = exp_map_res[j]
-
     # # XXX: Debug
     # printf("[exp_map] Input error: %e\n", max_err_p)
     # printf("[exp_map] Tangent space error: %e\n", max_err_t)
     # printf("[exp_map] Max Projection Error: %e\n", max_err)
-    free(exp_map_res)
 
 # Compute the logarithmic map on the hyperboloid
 cdef void log_map_single_lorentz(DTYPE_t[3] p, DTYPE_t[3] q, DTYPE_t* res) nogil:
@@ -1041,15 +1035,8 @@ cdef void log_map_single_lorentz(DTYPE_t[3] p, DTYPE_t[3] q, DTYPE_t* res) nogil
 
 # Applies log_map_single_lorentz for every pair of points in x and y
 cpdef void log_map(DTYPE_t[:, :] x, DTYPE_t[:, :] y, DTYPE_t[:, :] out, int num_threads) nogil:
-    cdef DTYPE_t* log_map_res = <DTYPE_t*> malloc(sizeof(DTYPE_t) * 3)
-
     for i in range(x.shape[0]):
-        log_map_single_lorentz(&x[i, 0], &y[i, 0], log_map_res)
-
-        for j in range(3):
-            out[i, j] = log_map_res[j]
-
-    free(log_map_res)
+        log_map_single_lorentz(&x[i, 0], &y[i, 0], &out[i, 0])
 
 def distance_grad_py(double[:] u, double[:] v):
     cdef DTYPE_t[3] res
@@ -1156,7 +1143,8 @@ cdef double exact_compute_gradient_negative(double[:, :] pos_reference,
         DTYPE_t* neg_f_axes
 
     with nogil, parallel(num_threads=num_threads):
-        neg_f_axes = <DTYPE_t*> malloc(sizeof(DTYPE_t) * n_samples * n_dimensions) # TODO: Save space by using only 3 dims
+        # Define thread-local buffers
+        neg_f_axes = <DTYPE_t*> malloc(sizeof(DTYPE_t) * n_dimensions)
 
         for i in prange(start, n_samples, schedule='static'):
             # Init the gradient vector
@@ -1179,9 +1167,9 @@ cdef double exact_compute_gradient_negative(double[:, :] pos_reference,
                     mult = qij * qij
 
                 sum_Q += qij
-                distance_grad_q(&pos_reference[i, 0], &pos_reference[j, 0], &neg_f_axes[i * n_dimensions])
+                distance_grad_q(&pos_reference[i, 0], &pos_reference[j, 0], neg_f_axes)
                 for ax in range(n_dimensions):
-                    neg_f[i * n_dimensions + ax] += mult * neg_f_axes[i * n_dimensions + ax]
+                    neg_f[i * n_dimensions + ax] += mult * neg_f_axes[ax]
         free(neg_f_axes)
 
     # Put sum_Q to machine EPSILON to avoid divisions by 0
@@ -1285,7 +1273,8 @@ cdef double compute_gradient_positive(double[:] val_P,
 
 
     with nogil, parallel(num_threads=num_threads):
-        dist_grad_pos = <DTYPE_t*> malloc(sizeof(DTYPE_t) * n_dimensions * n_samples)
+        # Define thread-local buffers
+        dist_grad_pos = <DTYPE_t*> malloc(sizeof(DTYPE_t) * n_dimensions)
 
         for i in prange(start, n_samples, schedule='static'):
             # Init the gradient vector
@@ -1312,10 +1301,10 @@ cdef double compute_gradient_positive(double[:] val_P,
                 if compute_error:
                     qij = qij / sum_Q
                     C += pij * log(max(pij, FLOAT32_TINY) / max(qij, FLOAT32_TINY))
-                distance_grad_q(&pos_reference[i, 0], &pos_reference[j, 0], &dist_grad_pos[i * n_dimensions])
+                distance_grad_q(&pos_reference[i, 0], &pos_reference[j, 0], dist_grad_pos)
                 for ax in range(n_dimensions):
                     coord = i * n_dimensions + ax
-                    pos_f[coord] += mult * dist_grad_pos[coord]
+                    pos_f[coord] += mult * dist_grad_pos[ax]
         free(dist_grad_pos)
 
     return C
