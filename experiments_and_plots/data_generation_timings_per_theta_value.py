@@ -19,6 +19,8 @@ import numpy as np
 from matplotlib import pyplot as plt
 from scipy.sparse import issparse, save_npz
 
+from configs import TSNEConfigs
+
 from hyperbolicTSNE import Datasets, load_data, initialization, SequentialOptimizer, HyperbolicTSNE
 from hyperbolicTSNE.util import find_last_embedding
 from hyperbolicTSNE.visualization import plot_poincare
@@ -27,8 +29,8 @@ from hyperbolicTSNE.visualization import plot_poincare
 # GENERAL EXPERIMENT PARAMETERS #
 #################################
 
-BASE_DIR = "../results/timings_per_theta"  # dir where results will be saved
-DATASETS_DIR = "../datasets"  # directory to read the data from
+BASE_DIR = "./results/timings_per_theta"  # dir where results will be saved
+DATASETS_DIR = "./datasets"  # directory to read the data from
 
 # Constants
 SEED = 42  # seed to initialize random processes
@@ -42,14 +44,17 @@ hd_params = {"perplexity": PERP}
 
 # Variables
 datasets = [
-    Datasets.LUKK,
+    # Datasets.LUKK,
     Datasets.MYELOID8000,
     Datasets.PLANARIA,
     Datasets.MNIST,
     Datasets.C_ELEGANS,
-    Datasets.WORDNET
+    # Datasets.WORDNET
 ]
 thetas = [n / 20 for n in range(20, -1, -1)]  # The different theta values to be used in the acceleration experiment
+
+ci = TSNEConfigs()
+cfg = ci.config_accelerated_lorentz
 
 ###################
 # EXPERIMENT LOOP #
@@ -82,21 +87,8 @@ for dataset in datasets:  # Iterate over the data sets
 
         print(f"[theta_timings] Processing {dataset}, config_id ({config_id}) with Theta: {theta}")
 
-        LR = (dataX.shape[0] * 1) / (EXAG * 1000)  # Compute the learning rate
-
-        opt_params = SequentialOptimizer.sequence_poincare(
-            learning_rate_ex=LR,  # specify learning rate for the early exaggeration
-            learning_rate_main=LR,  # specify learning rate for the non-exaggerated gradient descent
-            exaggeration=EXAG,
-            vanilla=VANILLA,
-            momentum_ex=0.5,  # momentum to be used during early exaggeration
-            momentum=0.8,  # momentum to be used during non-exaggerated gradient descent
-            exact=False,
-            n_iter_check=10,  # Needed for early stopping criterion
-            size_tol=0.999,  # Size of the embedding to be used as early stopping criterion
-            angle=theta  # The theta value to be used in the acceleration
-        )
-
+        cfg["opt_params"]["angle"] = theta
+        opt_params = cfg["get_opt_params"](ci, dataX.shape[0])
         run_dir = Path(f"{BASE_DIR}/{dataset.name}/theta_{theta}/")
 
         if run_dir.exists():
@@ -106,20 +98,18 @@ for dataset in datasets:  # Iterate over the data sets
             run_dir.mkdir(parents=True, exist_ok=True)
 
             params = {
-                "lr": LR,
                 "perplexity": PERP,
                 "seed": SEED,
                 "sample_size": int(n_samples),
-                "tsne_type": "accelerated",
-                "splitting_strategy": "equal_length",
-                "theta": theta
+                "theta": theta,
+                "opt_params": cfg["opt_params"],
             }
 
             print(f"[theta_timings] - Starting configuration {config_id} with dataset {dataset.name}: {params}")
 
-            opt_params["logging_dict"] = {
-                "log_path": str(run_dir.joinpath("embeddings"))
-            }
+            # opt_params["logging_dict"] = {
+            #     "log_path": str(run_dir.joinpath("embeddings"))
+            # }
 
             # Save the high-dimensional neighborhood matrices for later use
             json.dump(params, open(run_dir.joinpath("params.json"), "w"))
@@ -134,7 +124,7 @@ for dataset in datasets:  # Iterate over the data sets
 
             hdeo_hyper = HyperbolicTSNE(
                 init=X_embedded,
-                n_components=X_embedded.shape[1],
+                n_components=cfg["data_num_components"],
                 metric="precomputed",
                 verbose=2,
                 opt_method=SequentialOptimizer,
@@ -147,7 +137,8 @@ for dataset in datasets:  # Iterate over the data sets
             except ValueError:
 
                 error_title = "_error"
-                res_hdeo_hyper = find_last_embedding(opt_params["logging_dict"]["log_path"])
+                # res_hdeo_hyper = find_last_embedding(opt_params["logging_dict"]["log_path"])
+                res_hdeo_hyper = None
                 traceback.print_exc(file=open(str(run_dir) + "traceback.txt", "w"))
 
                 print("[theta_timings] - Run failed ...")
@@ -164,7 +155,7 @@ for dataset in datasets:  # Iterate over the data sets
                 fig.savefig(run_dir.joinpath(f"final_embedding{error_title}.png"))
                 plt.close(fig)
 
-                np.save(run_dir.joinpath("logging_dict.npy"), opt_params["logging_dict"])
+                # np.save(run_dir.joinpath("logging_dict.npy"), opt_params["logging_dict"])
 
                 # Write out timings csv
                 timings = np.array(hdeo_hyper.optimizer.cf.results)
