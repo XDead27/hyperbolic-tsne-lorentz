@@ -1,6 +1,9 @@
 # virtual environment
 venv
 
+# environment files
+.env
+
 # non-stylistic pycharm configs
 .idea
 
