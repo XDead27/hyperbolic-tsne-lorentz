@@ -12,11 +12,15 @@ import numpy as np
 from matplotlib import pyplot as plt
 from hyperbolicTSNE import Datasets
 
+from configs import load_vars_env
+
 #################################
 # GENERAL EXPERIMENT PARAMETERS #
 #################################
 
-BASE_DIR = "../results/nnp_per_theta_MNIST"
+paths = load_vars_env()
+
+BASE_DIR = paths["results_path"] + "/nnp_per_theta"
 
 # Constants
 dataset = Datasets.MNIST  # The dataset to run the experiment on

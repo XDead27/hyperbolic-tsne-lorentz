@@ -13,11 +13,16 @@ import pandas as pd
 import seaborn as sns
 from matplotlib import pyplot as plt
 
+from configs import load_vars_env
+
 ####################
 # READING THE DATA #
 ####################
 
-results_path = Path("../results/timings_per_theta/")
+paths = load_vars_env()
+
+results_path = paths["results_path"] + "/timings_per_theta"
+
 data = []
 for subdir, dirs, files in os.walk(results_path):
     for file in files:
@@ -33,11 +38,11 @@ for subdir, dirs, files in os.walk(results_path):
                     "average_time": average_time
             })
 average_times = pd.DataFrame(data)
-average_times.loc[average_times.dataset == "LUKK", "order"] = 1
+# average_times.loc[average_times.dataset == "LUKK", "order"] = 1
 average_times.loc[average_times.dataset == "MYELOID8000", "order"] = 2
 average_times.loc[average_times.dataset == "PLANARIA", "order"] = 3
 average_times.loc[average_times.dataset == "MNIST", "order"] = 4
-average_times.loc[average_times.dataset == "WORDNET", "order"] = 5
+# average_times.loc[average_times.dataset == "WORDNET", "order"] = 5
 average_times.loc[average_times.dataset == "C_ELEGANS", "order"] = 6
 average_times = average_times.sort_values(by="order", ascending=True)
 
@@ -69,4 +74,4 @@ times_lineplot.set(yscale='log')
 axs.set_title(f"Average Total Time per Iteration vs Theta")
 axs.set_xlabel("Theta")
 axs.set_ylabel("log(Time (Seconds))")
-plt.savefig("theta_timing_plot.png")
+plt.savefig(results_path + "/theta_timing_plot.png")
