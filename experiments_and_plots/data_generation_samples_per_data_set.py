@@ -161,7 +161,7 @@ for dataset in datasets:  # Iterate over the data sets
 
                 hdeo_hyper = HyperbolicTSNE(  # Initialize an embedding object
                     init=X_embedded_sample,
-                    n_components=tsne_config["data_num_dimensions"],
+                    n_components=tsne_config["data_num_components"],
                     metric="precomputed",
                     verbose=2,
                     opt_method=SequentialOptimizer,
