@@ -20,7 +20,7 @@ import json
 import traceback
 from itertools import product
 from pathlib import Path
-import os 
+import os, sys
 import pandas as pd
 
 import numpy as np
@@ -38,10 +38,15 @@ from configs import setup_experiment
 # GENERAL EXPERIMENT PARAMETERS #
 #################################
 
-ids = [
-    1000,
-    1100,
-]
+ids = []
+if len(sys.argv) == 1:
+    ids = [
+        1000,
+        1100,
+    ]
+else:
+    for strid in sys.argv[1:]:
+        ids.append(int(strid))
 
 config_instance, run_configs, paths = setup_experiment(ids)
 
@@ -63,9 +68,9 @@ hd_params = {"perplexity": PERP}
 # Variables
 datasets = [
     # Datasets.LUKK,
-    # Datasets.MYELOID8000,
-    # Datasets.PLANARIA,
-    # Datasets.MNIST,
+    Datasets.MYELOID8000,
+    Datasets.PLANARIA,
+    Datasets.MNIST,
     Datasets.C_ELEGANS,
     # Datasets.WORDNET
 ]
@@ -143,9 +148,9 @@ for dataset in datasets:  # Iterate over the data sets
 
                 print(f"[experiment_grid] - Starting configuration {tsne_config['config_id']} with dataset {dataset.name}: {params}")
 
-                # opt_params["logging_dict"] = {
-                #     "log_path": str(run_dir.joinpath("embeddings"))
-                # }
+                opt_params["logging_dict"] = {
+                    "log_path": str(run_dir.joinpath("embeddings"))
+                }
 
                 # Save the high-dimensional neighborhood matrices for later use
                 json.dump(params, open(run_dir.joinpath("params.json"), "w"))
@@ -174,8 +179,8 @@ for dataset in datasets:  # Iterate over the data sets
                 except ValueError: 
 
                     error_title = "_error"
-                    # res_hdeo_hyper = find_last_embedding(opt_params["logging_dict"]["log_path"])
-                    res_hdeo_hyper = None
+                    res_hdeo_hyper = find_last_embedding(opt_params["logging_dict"]["log_path"])
+                    # res_hdeo_hyper = None
                     traceback.print_exc(file=open(str(run_dir) + "traceback.txt", "w"))
 
                     print("[experiment_grid] - Run failed ...")
@@ -192,7 +197,7 @@ for dataset in datasets:  # Iterate over the data sets
                     fig.savefig(run_dir.joinpath(f"final_embedding{error_title}.png"))
                     plt.close(fig)
 
-                    # np.save(run_dir.joinpath("logging_dict.npy"), opt_params["logging_dict"])
+                    np.save(run_dir.joinpath("logging_dict.npy"), opt_params["logging_dict"])
 
                     # Write out timings csv
                     timings = np.array(hdeo_hyper.optimizer.cf.results)
