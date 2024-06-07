@@ -33,7 +33,7 @@ def check_params(params):
     if params["params"] is not None and not isinstance(params["params"], dict):
         raise TypeError("`params` should be either None or a dict with the appropriate setup parameters")
 
-    general_params = ["num_threads", "verbose", "degrees_of_freedom", "calc_both", "area_split", "grad_fix"]
+    general_params = ["num_threads", "verbose", "degrees_of_freedom", "calc_both", "grad_fix"]
     if params["method"] == "exact":
         all_params = general_params + ["skip_num_points"]
     elif params["method"] == "barnes-hut":
@@ -41,8 +41,10 @@ def check_params(params):
     else:
         raise ValueError("HyperbolicKL method is not a valid one (available methods are `exact` and `barnes-hut`)")
 
+    optional_params = ["area_split", "lorentz_centroid"]
+
     for p in params["params"]:
-        if p not in all_params:
+        if p not in all_params + optional_params:
             raise ValueError(f"{p} is not in the param set of the `{params['method']}` version of HyperbolicKL.")
     for p in all_params:
         if p not in params["params"]:
@@ -355,7 +357,7 @@ class HyperbolicKL:
                 compute_error=True,
                 num_threads=self.params["params"]["num_threads"],
                 exact=False,
-                area_split=self.params["params"]["area_split"],
+                lorentz_centroid=self.params["params"]["lorentz_centroid"],
                 grad_fix=self.params["params"]["grad_fix"]
             )
         elif model == "poincare":

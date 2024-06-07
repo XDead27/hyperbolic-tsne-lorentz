@@ -237,11 +237,14 @@ class SequentialOptimizer:
     def sequence_poincare(cls, exaggeration_its=250, exaggeration=12, gradientDescent_its=750,
                           n_iter_check=np.inf, threshold_cf=0., threshold_its=-1, threshold_check_size=-1, size_tol=None,
                           learning_rate_ex=0.1, learning_rate_main=0.1, momentum_ex=0.5, momentum=0.8, vanilla=False, exact=True, calc_both=False, angle=0.5,
-                          area_split=False, grad_fix=False, grad_scale_fix=False, hyperbolic_model="poincare"):
+                          area_split=False, lorentz_centroid=False, grad_fix=False, grad_scale_fix=False, hyperbolic_model="poincare"):
         # Start with an empty sequence
         cf_config_params = HyperbolicKL.exact_tsne() if exact else HyperbolicKL.bh_tsne()
         cf_config_params["params"]["calc_both"] = calc_both
-        cf_config_params["params"]["area_split"] = area_split
+        if hyperbolic_model == "poincare":
+            cf_config_params["params"]["area_split"] = area_split
+        elif hyperbolic_model == "lorentz":
+            cf_config_params["params"]["lorentz_centroid"] = lorentz_centroid
         cf_config_params["params"]["grad_fix"] = grad_fix
 
         if not exact:
@@ -285,11 +288,14 @@ class SequentialOptimizer:
     def sequence_lorentz_proj(cls, exaggeration_its=250, exaggeration=12, gradientDescent_its=750,
                           n_iter_check=np.inf, threshold_cf=0., threshold_its=-1, threshold_check_size=-1, size_tol=None,
                           learning_rate_ex=0.1, learning_rate_main=0.1, momentum_ex=0.5, momentum=0.8, vanilla=False, exact=True, calc_both=False, angle=0.5,
-                          area_split=False, grad_fix=False, grad_scale_fix=False, hyperbolic_model="lorentz"):
+                          area_split=False, lorentz_centroid=False, grad_fix=False, grad_scale_fix=False, hyperbolic_model="lorentz"):
         # Start with an empty sequence
         cf_config_params = HyperbolicKL.exact_tsne() if exact else HyperbolicKL.bh_tsne()
         cf_config_params["params"]["calc_both"] = calc_both
-        cf_config_params["params"]["area_split"] = area_split
+        if hyperbolic_model == "poincare":
+            cf_config_params["params"]["area_split"] = area_split
+        elif hyperbolic_model == "lorentz":
+            cf_config_params["params"]["lorentz_centroid"] = lorentz_centroid
         cf_config_params["params"]["grad_fix"] = grad_fix
 
         if not exact:

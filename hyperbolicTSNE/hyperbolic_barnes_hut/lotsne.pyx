@@ -38,8 +38,8 @@ cdef int LORENTZ_X_1 = 0
 cdef int LORENTZ_X_2 = 1
 cdef double MACHINE_EPSILON = np.finfo(np.double).eps
 cdef int TAKE_TIMING = 1
-cdef int AREA_SPLIT = 0
 cdef int GRAD_FIX = 1
+cdef int LORENTZ_CENTROID = 0
 
 ##################################################
 # OcTree
@@ -1399,15 +1399,15 @@ def gradient(float[:] timings,
              bint compute_error=1,
              int num_threads=1,
              bint exact=1,
-             bint area_split=0,
+             bint lorentz_centroid=0,
              bint grad_fix=0):
     cdef double C
     cdef int n
     cdef _OcTree qt = _OcTree(pos_output.shape[1], verbose)
     cdef clock_t t1 = 0, t2 = 0
 
-    global AREA_SPLIT
-    AREA_SPLIT = area_split
+    global LORENTZ_CENTROID
+    LORENTZ_CENTROID = lorentz_centroid
 
     global GRAD_FIX
     GRAD_FIX = grad_fix
