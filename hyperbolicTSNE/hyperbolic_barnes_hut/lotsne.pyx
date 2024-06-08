@@ -70,6 +70,7 @@ cdef struct Cell:
     DTYPE_t[3] center          # Store the center for quick split of cells
     DTYPE_t[3] barycenter      # Keep track of the center of mass of the cell
     DTYPE_t lorentz_factor_sum
+    DTYPE_t[3] vector_sum
 
     # Cell boundaries
     DTYPE_t[3] min_bounds      # Inferior boundaries of this cell (inclusive)
@@ -194,6 +195,11 @@ cpdef int check_is_inf_nan_all(double[:, :] ps) except -1 nogil:
 # Computes the T value for a 2 dimensional point
 cpdef DTYPE_t compute_lorentz_t(DTYPE_t y1, DTYPE_t y2) nogil:
     return sqrt(1. + y1 * y1 + y2 * y2)
+
+# Adds two vectors of size 3, and save the result in the second one
+cdef void add_vec3(DTYPE_t[3] vecAdd, DTYPE_t* vecDst) nogil:
+    for i in range(3):
+        vecDst[i] += vecAdd[i]
 
 cpdef DTYPE_t poincare_to_lorentz(DTYPE_t y1, DTYPE_t y2, DTYPE_t[:] result) nogil:
     cdef:
@@ -458,6 +464,7 @@ cdef class _OcTree:
         cdef DTYPE_t[2] klein_barycenter
         cdef DTYPE_t temp_norm
         cdef DTYPE_t temp_lorentz
+        cdef DTYPE_t[3] point_mean
 
         if self.verbose > 10:
             printf("[OcTree] Inserting depth %li\n", cell.depth)
@@ -470,12 +477,15 @@ cdef class _OcTree:
                 cell.barycenter[i] = point[i]
             cell.point_index = point_index
 
-            lorentz_to_klein(point, klein_point)
+            if LORENTZ_CENTROID:
+                _copy_point(point, cell.vector_sum)
+            else:
+                lorentz_to_klein(point, klein_point)
 
-            temp_norm = sq_norm(klein_point[0],
-                                klein_point[1])
-            temp_lorentz = lorentz_factor(temp_norm)
-            cell.lorentz_factor_sum = temp_lorentz
+                temp_norm = sq_norm(klein_point[0],
+                                    klein_point[1])
+                temp_lorentz = lorentz_factor(temp_norm)
+                cell.lorentz_factor_sum = temp_lorentz
 
             if self.verbose > 10:
                 printf("[OcTree] inserted point %li in cell %li\n",
@@ -485,29 +495,40 @@ cdef class _OcTree:
         # If the cell is not a leaf, update cell internals and
         # recurse in selected child
         if not cell.is_leaf:
-            # Recompute barycenter of cell
-            lorentz_to_klein(point, klein_point)
-
-            temp_norm = sq_norm(klein_point[0],
-                                klein_point[1])
-
-            if temp_norm >= 1.:
-                printf("We kinda have an issue...\n")
-            temp_lorentz = lorentz_factor(temp_norm)
-            if isnan(temp_lorentz):
-                printf("We have enother issue...\n")
-
-            lorentz_to_klein(cell.barycenter, klein_barycenter)
-
-            klein_barycenter[0] = (klein_barycenter[0] * cell.lorentz_factor_sum + temp_lorentz * klein_point[0]) / (cell.lorentz_factor_sum + temp_lorentz)
-            klein_barycenter[1] = (klein_barycenter[1] * cell.lorentz_factor_sum + temp_lorentz * klein_point[1]) / (cell.lorentz_factor_sum + temp_lorentz)
-
-            klein_to_lorentz(klein_barycenter, cell.barycenter)
-
-            cell.lorentz_factor_sum += temp_lorentz
-
             # Increase the size of the subtree starting from this cell
             cell.cumulative_size += 1
+
+            if LORENTZ_CENTROID:
+                add_vec3(point, cell.vector_sum)
+
+                for i in range(3):
+                    point_mean[i] = (1 / cell.cumulative_size) * cell.vector_sum[i]
+
+                temp_norm = sqrt(fabs(minkowski_bilinear(point_mean, point_mean)))
+                
+                for i in range(3):
+                    cell.barycenter[i] = point_mean[i] / temp_norm
+            else:
+                # Recompute barycenter of cell
+                lorentz_to_klein(point, klein_point)
+
+                temp_norm = sq_norm(klein_point[0],
+                                klein_point[1])
+
+                if temp_norm >= 1.:
+                    printf("We kinda have an issue...\n")
+                temp_lorentz = lorentz_factor(temp_norm)
+                if isnan(temp_lorentz):
+                    printf("We have enother issue...\n")
+
+                lorentz_to_klein(cell.barycenter, klein_barycenter)
+
+                klein_barycenter[0] = (klein_barycenter[0] * cell.lorentz_factor_sum + temp_lorentz * klein_point[0]) / (cell.lorentz_factor_sum + temp_lorentz)
+                klein_barycenter[1] = (klein_barycenter[1] * cell.lorentz_factor_sum + temp_lorentz * klein_point[1]) / (cell.lorentz_factor_sum + temp_lorentz)
+
+                klein_to_lorentz(klein_barycenter, cell.barycenter)
+
+                cell.lorentz_factor_sum += temp_lorentz
 
             # Insert child in the correct subtree
             selected_child = self._select_child(point, cell)
@@ -591,11 +612,14 @@ cdef class _OcTree:
             child.center[i] = (child.min_bounds[i] + child.max_bounds[i]) / 2.
 
             child.barycenter[i] = point[i]
+            if LORENTZ_CENTROID:
+                child.vector_sum[i] = point[i]
 
-        # Compute lorentz factor sum (TODO get rid of it)
-        lorentz_to_klein(child.barycenter, klein_barycenter)
-        temp_norm = sq_norm(klein_barycenter[0], klein_barycenter[1])
-        child.lorentz_factor_sum = lorentz_factor(temp_norm)
+        if not LORENTZ_CENTROID:
+            # Compute lorentz factor sum
+            lorentz_to_klein(child.barycenter, klein_barycenter)
+            temp_norm = sq_norm(klein_barycenter[0], klein_barycenter[1])
+            child.lorentz_factor_sum = lorentz_factor(temp_norm)
 
         # Compute the maximum squared distance by intersecting with hyperboloid
         width = get_max_dist_hyperboloid_sect(child.min_bounds, child.max_bounds)

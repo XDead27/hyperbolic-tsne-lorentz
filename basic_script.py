@@ -2,7 +2,7 @@ import os
 import sys
 import traceback
 
-from experiments_and_plots.configs import TSNEConfigs
+from experiments_and_plots.configs import setup_experiment
 
 from hyperbolicTSNE.util import find_last_embedding
 from hyperbolicTSNE.visualization import plot_poincare, plot_lorentz, animate
@@ -12,12 +12,12 @@ from hyperbolicTSNE.initializations_ import to_lorentz, from_lorentz
 data_home = "datasets"
 log_path = "temp/poincare/"  # path for saving embedding snapshots
 
-model = "poincare"
-# model = "lorentz"
+config_id = [1120]
+
 only_animate = False
 seed = 42
 dataset = Datasets.MNIST  # the Datasets handler provides access to several data sets used throughout the repository
-num_points = 2000  # we use a subset for demonstration purposes, full MNIST has N=70000
+num_points = 70000  # we use a subset for demonstration purposes, full MNIST has N=70000
 perp = 30  # we use a perplexity of 30 in this example
 
 dataX, dataLabels, D, V, _ = load_data(
@@ -30,9 +30,10 @@ dataX, dataLabels, D, V, _ = load_data(
     knn_method="hnswlib"  # we use an approximation of high-dimensional neighbors to speed up computations
 )
 
-ci = TSNEConfigs()
-cfg = ci.config_accelerated_lorentz if model == "lorentz" else ci.config_accelerated_poincare
+ci, cfg, _ = setup_experiment(config_id)
+cfg = cfg[0]
 
+model = cfg["opt_params"]["hyperbolic_model"]
 n_components = cfg["data_num_components"]
 opt_params = cfg["get_opt_params"](ci, num_points)
 

@@ -16,6 +16,7 @@ class TSNEConfigs:
             self.config_exact_poincare,
             self.config_accelerated_lorentz,
             self.config_exact_lorentz,
+            self.config_accelerated_lorentz_centroid,
         ]
 
     """
@@ -144,6 +145,38 @@ class TSNEConfigs:
             "size_tol": 0.96,
         },
         "get_opt_params": config_exact_lorentz_get_opt_params,
+    }
+
+    """
+    Accelerated Lorentz Centroid Configuration
+    """
+    def config_accelerated_lorentz_centroid_get_opt_params(self, n_samples):
+        config_choice = self.config_accelerated_lorentz_centroid
+        val = n_samples / (config_choice["opt_params"]["exaggeration"] * 5)
+
+        config_choice["opt_params"]["learning_rate_ex"] = val / 12
+        config_choice["opt_params"]["learning_rate_main"] = val
+        return config_choice["opt_type"](**config_choice["opt_params"])
+
+    config_accelerated_lorentz_centroid = {
+        "config_id": 1120,
+        "name": "Octree Lorentz Centroid",
+        "data_num_components": 3,
+        "opt_type": SequentialOptimizer.sequence_lorentz_proj,
+        "opt_params": {
+            "learning_rate_ex": None,
+            "learning_rate_main": None,
+            "exaggeration": 12,
+            "vanilla": False,
+            "momentum_ex": 0.35,
+            "momentum": 0.6,
+            "exact": False,
+            "lorentz_centroid": True,
+            "n_iter_check": 10,
+            "hyperbolic_model": "lorentz",
+            "size_tol": 0.96,
+        },
+        "get_opt_params": config_accelerated_lorentz_centroid_get_opt_params,
     }
 
 
