@@ -743,6 +743,7 @@ cdef class _OcTree:
             DTYPE_t dist
             Cell* cell = &self.cells[cell_id]
             DTYPE_t[2] poincare_barycenter
+            clock_t t1, t2 
 
         # (1) Change signature to receive Poincare point, then, for 
         #     each point in the tree, translate to Poincare model and
@@ -754,11 +755,30 @@ cdef class _OcTree:
         #     gradient and distance methods to summarize (cleaneast, hardest) (CHOSEN)
         
         results[idx_d] = 0.
+        if self.take_timings:
+            t1 = clock()
+
         distance_grad_q(point, cell.barycenter, &results[idx])
+
+        if self.take_timings:
+            t2 = clock()
+            self.timings[0] += ((float) (t2 - t1)) / CLOCKS_PER_SEC
+            self.timings[1] += 1
+
+
         for i in range(self.n_dimensions):
             duplicate &= fabs(results[idx + i]) <= EPSILON
 
+        if self.take_timings:
+            t1 = clock()
+
         dist = distance_q(point, cell.barycenter)
+        
+        if self.take_timings:
+            t2 = clock()
+            self.timings[2] += ((float) (t2 - t1)) / CLOCKS_PER_SEC
+            self.timings[3] += 1
+
         results[idx_d] = dist * dist
 
         # Do not compute self interactions
@@ -1427,7 +1447,7 @@ def gradient(float[:] timings,
              bint grad_fix=0):
     cdef double C
     cdef int n
-    cdef _OcTree qt = _OcTree(pos_output.shape[1], verbose)
+    cdef _OcTree qt = _OcTree(pos_output.shape[1], verbose, timings=timings[4:])
     cdef clock_t t1 = 0, t2 = 0
 
     global LORENTZ_CENTROID

@@ -256,7 +256,7 @@ class HyperbolicKL:
         indptr = V.indptr.astype(np.int64, copy=False)
 
         grad = np.zeros(Y.shape, dtype=ctypes.c_double)
-        timings = np.zeros(4, dtype=ctypes.c_float)
+        timings = np.zeros(8, dtype=ctypes.c_float)
 
         if model == "lorentz":
             error = gradient_lorentz(
@@ -344,7 +344,7 @@ class HyperbolicKL:
         indptr = V.indptr.astype(np.int64, copy=False)
 
         grad = np.zeros(Y.shape, dtype=ctypes.c_double)
-        timings = np.zeros(4, dtype=ctypes.c_float)
+        timings = np.zeros(8, dtype=ctypes.c_float)
         
         if model == "lorentz":
             error = gradient_lorentz(
