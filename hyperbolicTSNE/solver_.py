@@ -7,6 +7,7 @@ Currently available solvers include:
  - Gradient Descent
 """
 import ctypes
+import os
 from time import time
 import numpy as np
 import pandas as pd
@@ -110,8 +111,9 @@ def log_iteration(logging_dict, logging_key, it, y, n_samples, n_components,
     # Store the embedding as CSV file at the given location
     log_path = logging_dict.get("log_path", None)
     if log_path is not None:
-        Path(log_path + logging_key).mkdir(parents=True, exist_ok=True)
-        pd.DataFrame(y).to_csv(log_path + logging_key + "/" + str(it) + ", " + str(cf_val) + ".csv", header=False,
+        lp = Path(os.path.join(log_path, logging_key))
+        lp.mkdir(parents=True, exist_ok=True)
+        pd.DataFrame(y).to_csv(os.path.join(lp, str(it) + ", " + str(cf_val) + ".csv"), header=False,
                                index=False)
 
 

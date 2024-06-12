@@ -202,10 +202,7 @@ cdef class _QuadTree:
     cdef public SIZE_t n_points          # Total number of points
     cdef Cell* cells                     # Array of nodes
 
-    cdef bint take_timings
-    cdef float* timings
-
-    def __cinit__(self, int n_dimensions, int verbose, float[:] timings=None):
+    def __cinit__(self, int n_dimensions, int verbose):
         """Constructor."""
         # Parameters of the tree
         self.n_dimensions = n_dimensions
@@ -218,12 +215,6 @@ cdef class _QuadTree:
         self.capacity = 0
         self.n_points = 0
         self.cells = NULL
-
-        if timings is not None:
-            self.take_timings = True
-            self.timings = &timings[0]
-        else:
-            self.take_timings = False
 
     def __dealloc__(self):
         """Destructor."""
@@ -618,29 +609,12 @@ cdef class _QuadTree:
             clock_t t1, t2
 
         results[idx_d] = 0.
-        if self.take_timings:
-            t1 = clock()
-
-        results[idx_d] = 0.
         for i in range(self.n_dimensions):
             results[idx + i] = distance_grad_q(point, cell.barycenter, i)
             duplicate &= fabs(results[idx + i]) <= EPSILON
 
-        if self.take_timings:
-            t2 = clock()
-            self.timings[0] += ((float) (t2 - t1)) / CLOCKS_PER_SEC
-            self.timings[1] += 1
-
-        if self.take_timings:
-            t1 = clock()
-
         dist = distance_q(point, cell.barycenter)
         results[idx_d] = dist * dist
-
-        if self.take_timings:
-            t2 = clock()
-            self.timings[2] += ((float) (t2 - t1)) / CLOCKS_PER_SEC
-            self.timings[3] += 1
 
         # Do not compute self interactions
         if duplicate and cell.is_leaf:
@@ -1327,7 +1301,7 @@ def gradient(float[:] timings,
              bint grad_fix=0):
     cdef double C
     cdef int n
-    cdef _QuadTree qt = _QuadTree(pos_output.shape[1], verbose, timings=timings[4:])
+    cdef _QuadTree qt = _QuadTree(pos_output.shape[1], verbose)
     cdef clock_t t1 = 0, t2 = 0
 
     global AREA_SPLIT

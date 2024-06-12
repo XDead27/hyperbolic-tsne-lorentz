@@ -38,6 +38,7 @@ cdef int LORENTZ_X_1 = 0
 cdef int LORENTZ_X_2 = 1
 cdef double MACHINE_EPSILON = np.finfo(np.double).eps
 cdef int TAKE_TIMING = 1
+cdef int TAKE_TIMING_FULL = 0
 cdef int GRAD_FIX = 1
 cdef int LORENTZ_CENTROID = 0
 
@@ -375,7 +376,6 @@ cdef class _OcTree:
     cdef Cell* cells                     # Array of nodes
 
     # Debug fields
-    cdef bint take_timings
     cdef float* timings
 
     def __cinit__(self, int n_dimensions, int verbose, float[:] timings=None):
@@ -392,12 +392,7 @@ cdef class _OcTree:
         self.n_points = 0
         self.cells = NULL
 
-        # Debug fields
-        if timings is not None:
-            self.take_timings = True
-            self.timings = &timings[0]
-        else:
-            self.take_timings = False
+        self.timings = &timings[0]
 
     def __dealloc__(self):
         """Destructor."""
@@ -756,34 +751,29 @@ cdef class _OcTree:
         #     gradient and distance methods to summarize (cleaneast, hardest) (CHOSEN)
         
         results[idx_d] = 0.
-        if self.take_timings:
-            t1 = clock()
+        # if TAKE_TIMING_FULL:
+        #     t1 = clock()
 
         distance_grad_q(point, cell.barycenter, &results[idx])
 
-        if self.take_timings:
-            t2 = clock()
-            self.timings[0] += ((float) (t2 - t1)) / CLOCKS_PER_SEC
-            self.timings[1] += 1
+        # if TAKE_TIMING_FULL:
+        #     t2 = clock()
+        #     self.timings[0] += ((float) (t2 - t1)) / CLOCKS_PER_SEC
+        #     self.timings[1] += 1
 
 
         for i in range(self.n_dimensions):
             duplicate &= fabs(results[idx + i]) <= EPSILON
 
-        if self.take_timings:
-            t1 = clock()
+        # if TAKE_TIMING_FULL:
+        #     t1 = clock()
 
         dist = distance_q(point, cell.barycenter)
-
-        # # XXX: Debug
-        # if cell_id == 0:
-        #     printf("[summarize] Query Point: %e %e %e\n", point[0], point[1], point[2])
-        # printf("[summarize][cell %d] Barycenter: %e %e %e\t Dist: %e\n", cell_id, cell.barycenter[0], cell.barycenter[1], cell.barycenter[2], dist)
         
-        if self.take_timings:
-            t2 = clock()
-            self.timings[2] += ((float) (t2 - t1)) / CLOCKS_PER_SEC
-            self.timings[3] += 1
+        # if TAKE_TIMING_FULL:
+        #     t2 = clock()
+        #     self.timings[2] += ((float) (t2 - t1)) / CLOCKS_PER_SEC
+        #     self.timings[3] += 1
 
         results[idx_d] = dist * dist
 
@@ -1453,8 +1443,14 @@ def gradient(float[:] timings,
              bint grad_fix=0):
     cdef double C
     cdef int n
-    cdef _OcTree qt = _OcTree(pos_output.shape[1], verbose, timings=timings[4:])
+    cdef _OcTree qt
     cdef clock_t t1 = 0, t2 = 0
+
+    if TAKE_TIMING_FULL:
+        qt = _OcTree(pos_output.shape[1], verbose, timings=timings[4:])
+    else:
+        qt = _OcTree(pos_output.shape[1], verbose)
+
 
     global LORENTZ_CENTROID
     LORENTZ_CENTROID = lorentz_centroid
