@@ -194,6 +194,7 @@ def load_vars_env():
     return {
         "results_path": os.getenv('RESULTS_DIR'),
         "datasets_path": os.getenv('DATASETS_DIR'),
+        "logging_path": os.getenv('LOGGING_DIR'),
     }
 
 

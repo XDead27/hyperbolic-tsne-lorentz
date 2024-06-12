@@ -9,15 +9,20 @@ from hyperbolicTSNE.visualization import plot_poincare, plot_lorentz, animate
 from hyperbolicTSNE import load_data, Datasets, SequentialOptimizer, initialization, HyperbolicTSNE
 from hyperbolicTSNE.initializations_ import to_lorentz, from_lorentz
 
-data_home = "datasets"
-log_path = "temp/poincare/"  # path for saving embedding snapshots
 
-config_id = [1120]
+config_id = [1000]
+
+ci, cfg, paths = setup_experiment(config_id)
+cfg = cfg[0]
+
+data_home = paths["datasets_path"]
+log_path = paths["logging_path"]
+results_path = paths["results_path"]
 
 only_animate = False
 seed = 42
 dataset = Datasets.MNIST  # the Datasets handler provides access to several data sets used throughout the repository
-num_points = 70000  # we use a subset for demonstration purposes, full MNIST has N=70000
+num_points = 10000  # we use a subset for demonstration purposes, full MNIST has N=70000
 perp = 30  # we use a perplexity of 30 in this example
 
 dataX, dataLabels, D, V, _ = load_data(
@@ -29,9 +34,6 @@ dataX, dataLabels, D, V, _ = load_data(
     sample=num_points, 
     knn_method="hnswlib"  # we use an approximation of high-dimensional neighbors to speed up computations
 )
-
-ci, cfg, _ = setup_experiment(config_id)
-cfg = cfg[0]
 
 model = cfg["opt_params"]["hyperbolic_model"]
 n_components = cfg["data_num_components"]
@@ -83,18 +85,18 @@ except ValueError:
     traceback.print_exc()
 
 # Create a rendering of the embedding and save it to a file
-if not os.path.exists("results"):
-    os.mkdir("results")
+if not os.path.exists(results_path):
+    os.mkdir(results_path)
 fig_p = plot_poincare(hyperbolicEmbedding, dataLabels)
-fig_p.savefig(f"results/{dataset.name}_{model}_p.png" if len(sys.argv) <= 1 else f"results/{sys.argv[1]}_p.png")
+fig_p.savefig(f"{results_path}/{dataset.name}_{model}_p.png" if len(sys.argv) <= 1 else f"{results_path}/{sys.argv[1]}_p.png")
 
 if model == "lorentz":
     fig_l = plot_lorentz(find_last_embedding(log_path), dataLabels)
-    fig_l.savefig(f"results/{dataset.name}_{model}_l.png" if len(sys.argv) <= 1 else f"results/{sys.argv[1]}_l.png")
+    fig_l.savefig(f"{results_path}/{dataset.name}_{model}_l.png" if len(sys.argv) <= 1 else f"{results_path}/{sys.argv[1]}_l.png")
 
 # This renders a GIF animation of the embedding process. If FFMPEG is installed, the command also supports .mp4 as file ending 
-animate(logging_dict, dataLabels, f"results/{dataset.name}_{model}_ani.gif" if len(sys.argv) <= 1 else f"results/{sys.argv[1]}_ani.gif", fast=True, plot_ee=True)
+animate(logging_dict, dataLabels, f"{results_path}/{dataset.name}_{model}_ani.gif" if len(sys.argv) <= 1 else f"{results_path}/{sys.argv[1]}_ani.gif", fast=True, plot_ee=True)
 
 if model == "lorentz":
-    animate(logging_dict, dataLabels, f"results/{dataset.name}_{model}_hyperb_ani.gif" if len(sys.argv) <= 1 else f"results/{sys.argv[1]}_hyperb_ani.gif", fast=True, plot_ee=True, n_dims=n_components)
+    animate(logging_dict, dataLabels, f"{results_path}/{dataset.name}_{model}_hyperb_ani.gif" if len(sys.argv) <= 1 else f"{results_path}/{sys.argv[1]}_hyperb_ani.gif", fast=True, plot_ee=True, n_dims=n_components)
 
