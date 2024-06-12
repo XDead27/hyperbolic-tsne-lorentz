@@ -502,12 +502,13 @@ cdef class _OcTree:
                 add_vec3(point, cell.vector_sum)
 
                 for i in range(3):
-                    point_mean[i] = (1 / cell.cumulative_size) * cell.vector_sum[i]
+                    point_mean[i] = cell.vector_sum[i] / cell.cumulative_size
 
                 temp_norm = sqrt(fabs(minkowski_bilinear(point_mean, point_mean)))
                 
                 for i in range(3):
                     cell.barycenter[i] = point_mean[i] / temp_norm
+
             else:
                 # Recompute barycenter of cell
                 lorentz_to_klein(point, klein_point)
@@ -773,6 +774,11 @@ cdef class _OcTree:
             t1 = clock()
 
         dist = distance_q(point, cell.barycenter)
+
+        # # XXX: Debug
+        # if cell_id == 0:
+        #     printf("[summarize] Query Point: %e %e %e\n", point[0], point[1], point[2])
+        # printf("[summarize][cell %d] Barycenter: %e %e %e\t Dist: %e\n", cell_id, cell.barycenter[0], cell.barycenter[1], cell.barycenter[2], dist)
         
         if self.take_timings:
             t2 = clock()
