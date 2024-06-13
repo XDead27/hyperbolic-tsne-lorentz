@@ -10,14 +10,14 @@ from hyperbolicTSNE import load_data, Datasets, SequentialOptimizer, initializat
 from hyperbolicTSNE.initializations_ import to_lorentz, from_lorentz
 
 
-config_id = [1000]
+config_id = [1120]
 
 ci, cfg, paths = setup_experiment(config_id)
 cfg = cfg[0]
 
 data_home = paths["datasets_path"]
 log_path = paths["logging_path"]
-results_path = paths["results_path"]
+results_path = os.path.join(paths["results_path"], "basic_script")
 
 only_animate = False
 seed = 42

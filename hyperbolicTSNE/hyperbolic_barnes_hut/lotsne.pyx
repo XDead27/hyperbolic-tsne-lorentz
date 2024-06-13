@@ -302,40 +302,43 @@ cdef void _copy_point(DTYPE_t[3] p, DTYPE_t* res) nogil:
     res[2] = p[2]
 
 cdef DTYPE_t get_max_dist_hyperboloid_sect(DTYPE_t[3] la, DTYPE_t[3] lb) nogil:
-    cdef DTYPE_t[8][3] points
-    cdef DTYPE_t[24][3] intersect
-    cdef DTYPE_t max_dist = 0.0, dist
-    cdef int[24] cnts
+    cdef DTYPE_t *points, *intersect, max_dist = 0.0, dist
+    cdef int* cnts
+    cdef int i, j
+
+    points = <DTYPE_t*> malloc(sizeof(DTYPE_t) * 8 * 3)
+    intersect = <DTYPE_t*> malloc(sizeof(DTYPE_t) * 24 * 3)
+    cnts = <int*> malloc(sizeof(int) * 24)
 
     # Setup points (too lazy to think of algorithm)
-    _copy_point(la, points[0]) # min bound
-    _copy_point(la, points[1])
-    _copy_point(la, points[3])
-    _copy_point(la, points[4])
-    _copy_point(lb, points[2])
-    _copy_point(lb, points[5])
-    _copy_point(lb, points[6]) # max bound
-    _copy_point(lb, points[7])
-    points[1][LORENTZ_X_1] = lb[LORENTZ_X_1]
-    points[3][LORENTZ_X_2] = lb[LORENTZ_X_2]
-    points[4][LORENTZ_T] = lb[LORENTZ_T]
-    points[2][LORENTZ_T] = la[LORENTZ_T]
-    points[5][LORENTZ_X_2] = la[LORENTZ_X_2]
-    points[7][LORENTZ_X_1] = la[LORENTZ_X_1]
+    _copy_point(la, &points[0 * 3]) # min bound
+    _copy_point(la, &points[1 * 3])
+    _copy_point(la, &points[3 * 3])
+    _copy_point(la, &points[4 * 3])
+    _copy_point(lb, &points[2 * 3])
+    _copy_point(lb, &points[5 * 3])
+    _copy_point(lb, &points[6 * 3]) # max bound
+    _copy_point(lb, &points[7 * 3])
+    points[1 * 3 + LORENTZ_X_1] = lb[LORENTZ_X_1]
+    points[3 * 3 + LORENTZ_X_2] = lb[LORENTZ_X_2]
+    points[4 * 3 + LORENTZ_T] = lb[LORENTZ_T]
+    points[2 * 3 + LORENTZ_T] = la[LORENTZ_T]
+    points[5 * 3 + LORENTZ_X_2] = la[LORENTZ_X_2]
+    points[7 * 3 + LORENTZ_X_1] = la[LORENTZ_X_1]
 
     # Get (max 24) intersection points with hyperboloid
-    _get_line_hyperboloid_intersection(points[0], points[1], intersect[0], intersect[1], &cnts[0])
-    _get_line_hyperboloid_intersection(points[0], points[3], intersect[2], intersect[3], &cnts[2])
-    _get_line_hyperboloid_intersection(points[0], points[4], intersect[4], intersect[5], &cnts[4])
-    _get_line_hyperboloid_intersection(points[6], points[5], intersect[6], intersect[7], &cnts[6])
-    _get_line_hyperboloid_intersection(points[6], points[7], intersect[8], intersect[9], &cnts[8])
-    _get_line_hyperboloid_intersection(points[6], points[2], intersect[10], intersect[11], &cnts[10])
-    _get_line_hyperboloid_intersection(points[1], points[2], intersect[12], intersect[13], &cnts[12])
-    _get_line_hyperboloid_intersection(points[1], points[5], intersect[14], intersect[15], &cnts[14])
-    _get_line_hyperboloid_intersection(points[3], points[2], intersect[16], intersect[17], &cnts[16])
-    _get_line_hyperboloid_intersection(points[3], points[7], intersect[18], intersect[19], &cnts[18])
-    _get_line_hyperboloid_intersection(points[4], points[5], intersect[20], intersect[21], &cnts[20])
-    _get_line_hyperboloid_intersection(points[4], points[7], intersect[22], intersect[23], &cnts[22])
+    _get_line_hyperboloid_intersection(&points[0], &points[3], &intersect[0], &intersect[3], &cnts[0])
+    _get_line_hyperboloid_intersection(&points[0], &points[9], &intersect[6], &intersect[9], &cnts[2])
+    _get_line_hyperboloid_intersection(&points[0], &points[12], &intersect[12], &intersect[15], &cnts[4])
+    _get_line_hyperboloid_intersection(&points[18], &points[15], &intersect[18], &intersect[21], &cnts[6])
+    _get_line_hyperboloid_intersection(&points[18], &points[21], &intersect[24], &intersect[27], &cnts[8])
+    _get_line_hyperboloid_intersection(&points[18], &points[6], &intersect[30], &intersect[33], &cnts[10])
+    _get_line_hyperboloid_intersection(&points[3], &points[6], &intersect[36], &intersect[39], &cnts[12])
+    _get_line_hyperboloid_intersection(&points[3], &points[15], &intersect[42], &intersect[45], &cnts[14])
+    _get_line_hyperboloid_intersection(&points[9], &points[6], &intersect[48], &intersect[51], &cnts[16])
+    _get_line_hyperboloid_intersection(&points[9], &points[21], &intersect[54], &intersect[57], &cnts[18])
+    _get_line_hyperboloid_intersection(&points[12], &points[15], &intersect[60], &intersect[63], &cnts[20])
+    _get_line_hyperboloid_intersection(&points[12], &points[21], &intersect[66], &intersect[69], &cnts[22])
 
     # Compute pairwise (lorentz) distance between the selected points
     for i in range(24):
@@ -344,7 +347,7 @@ cdef DTYPE_t get_max_dist_hyperboloid_sect(DTYPE_t[3] la, DTYPE_t[3] lb) nogil:
         for j in range(i, 24):
             if cnts[j] == 0:
                 continue
-            dist = distance_q(intersect[i], intersect[j])
+            dist = distance_q(&intersect[i * 3], &intersect[j * 3])
             if dist > max_dist:
                 max_dist = dist
 
