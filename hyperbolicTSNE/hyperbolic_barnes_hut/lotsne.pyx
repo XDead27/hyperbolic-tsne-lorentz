@@ -351,6 +351,10 @@ cdef DTYPE_t get_max_dist_hyperboloid_sect(DTYPE_t[3] la, DTYPE_t[3] lb) nogil:
             if dist > max_dist:
                 max_dist = dist
 
+    free(cnts)
+    free(intersect)
+    free(points)
+
     return max_dist
 
 cdef class _OcTree:
