@@ -73,38 +73,35 @@ plot_times_df_lorentz = plot_times_df.copy()
 plot_times_df_lorentz = plot_times_df_lorentz[(plot_times_df_lorentz.hyperbolic_model == "lorentz")]
 x = plot_times_df_lorentz["sample_size"].values
 y = plot_times_df_lorentz["total_time"].values
+model = np.poly1d(np.polyfit(x, y, 2))
 # model = np.poly1d(np.polyfit(np.log(x)*x, y, 1))
-# x_predicted = np.logspace(2.65, 5.1, num=10)
+x_predicted = np.logspace(2.65, 5.1, num=10)
 # Only use the leading term, i.e., the x^2 term, to fit the line
-# y_predicted = [model.coef[0] * a * np.log(a) for a in x_predicted]
+y_predicted = [model.coef[0] * a * np.log(a) for a in x_predicted]
 
 _, axs = plt.subplots(figsize=(5, 5), ncols=1)
 # Plot a trendline for the quadratic run times
-# axs.plot(
-#     x,
-#     y,
-#     # x_predicted,
-#     # y_predicted,
-#     color=(0, 0, 0, 1.0)
-# )
+axs.plot(
+    x_predicted,
+    y_predicted,
+    color=(0, 0, 0, 1.0)
+)
 
 # Perform linear regression on the accelerated timings to an n*log(n) model
 plot_times_df_poincare = plot_times_df.copy()
 plot_times_df_poincare = plot_times_df_poincare[(plot_times_df_poincare.hyperbolic_model == "poincare")]
 x = plot_times_df_poincare["sample_size"].values
 y = plot_times_df_poincare["total_time"].values
-# model = np.poly1d(np.polyfit(np.log(x)*x, y, 1))
-# y_predicted = [model.coef[0] * a * np.log(a) for a in x_predicted]
+model = np.poly1d(np.polyfit(np.log(x)*x, y, 1))
+y_predicted = [model.coef[0] * a * np.log(a) for a in x_predicted]
 
 # Plot a trendline for the lin-log run times
-# axs.plot(
-#     x,
-#     y,
-#     # x_predicted,
-#     # y_predicted,
-#     color=(0, 0, 0, 1.0),
-#     linestyle="dashed"
-# )
+axs.plot(
+    x_predicted,
+    y_predicted,
+    color=(0, 0, 0, 1.0),
+    linestyle="dashed"
+)
 
 times_lineplot = sns.lineplot(
     data=timings_df,
@@ -116,7 +113,7 @@ times_lineplot = sns.lineplot(
     markers=False,
     linewidth=linewidth,
     ax=axs)
-# times_lineplot.set(xscale='log', yscale='log')
+times_lineplot.set(xscale='log', yscale='log')
 
 axs.set_title(f"Average Total Time per Iteration vs Dataset Size")
 axs.set_xlabel("Log(Sample Size)")

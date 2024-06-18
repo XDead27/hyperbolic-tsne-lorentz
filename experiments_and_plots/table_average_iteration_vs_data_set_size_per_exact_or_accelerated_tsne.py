@@ -9,14 +9,20 @@ implementation.
 # IMPORTS #
 ###########
 
+import os
 from pathlib import Path
 import pandas as pd
 import numpy as np
 
+from configs import setup_experiment
+
 ####################
 # READING THE DATA #
 ####################
-results_path = Path("./results/samples_per_data_set/")
+
+_, cfgs, paths = setup_experiment([1000, 1100, 1010])
+
+results_path = Path(os.path.join(paths["results_path"], "samples_per_data_set"))
 df = pd.read_csv(results_path.joinpath("overview.csv"))
 timings_dfs = []
 for record in df.to_records():
@@ -38,29 +44,17 @@ del timings_dfs
 
 # Work with the "equal length" data, as this splitting technique proved to be more efficient, filtering by
 # "equal_length" contains both accelerated and exact data.
-plot_times_df = timings_df.copy()
 # plot_times_df = plot_times_df[(plot_times_df.splitting_strategy == "equal_length")]
 
-# Filter out only the exact, i.e., non-accelerated data
-plot_times_df_exact = plot_times_df.copy()
-plot_times_df_exact = plot_times_df_exact[(plot_times_df_exact.name == "Quadtree Poincare")]
+for cfg in cfgs:
+    # Filter out only the exact, i.e., non-accelerated data
+    plot_times_df = timing_df.copy()
+    plot_times_df = plot_times_df[(plot_times_df.name == cfg["name"])]
 
-# Print Min, Avg, Std, Max of the timings per dataset per size
-grouped = plot_times_df_exact.groupby(["dataset", "sample_size"])
-print("Statistics exact:")
-print(grouped["total_time"].min())
-print(grouped["total_time"].mean())
-print(grouped["total_time"].std())
-print(grouped["total_time"].max())
-
-# Filter out only the accelerated data, i.e., the data using the polar quad tree
-plot_times_df_accelerated = plot_times_df.copy()
-plot_times_df_accelerated = plot_times_df_accelerated[(plot_times_df_accelerated.name == "Octree Lorentz")]
-
-# Print Min, Avg, Std, Max of the timings per dataset per size
-grouped = plot_times_df_accelerated.groupby(["dataset", "sample_size"])
-print("Statistics accelerated:")
-print(grouped["total_time"].min())
-print(grouped["total_time"].mean())
-print(grouped["total_time"].std())
-print(grouped["total_time"].max())
+    # Print Min, Avg, Std, Max of the timings per dataset per size
+    grouped = plot_times_df.groupby(["dataset", "sample_size"])
+    print(f"Statistics {cfg['name']}:")
+    print(f'min: {grouped["total_time"].min()}')
+    print(f'mean: {grouped["total_time"].mean()}')
+    print(f'std: {grouped["total_time"].std()}')
+    print(f'max: {grouped["total_time"].max()}')

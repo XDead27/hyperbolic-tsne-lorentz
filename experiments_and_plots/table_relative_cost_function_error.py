@@ -9,10 +9,12 @@ relative errors are appended to the original data, which is then stored.
 # IMPORTS #
 ###########
 
+import os
 from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from configs import setup_experiment
 
 ######################
 # HELPER FUNCTION(S) #
@@ -36,8 +38,10 @@ def max_iteration_cost_function(df_record):
 # READING THE DATA #
 ####################
 
+_, cfgs, paths = setup_experiment([])
+
 # Use the data generated from the various runs on the data sets with several sample sizes
-results_path = Path("../results/samples_per_data_set/")
+results_path = Path(os.path.join(paths["results_path"], "samples_per_data_set"))
 
 # Load the overview of the experiments
 df = pd.read_csv(results_path.joinpath("overview.csv"))
@@ -49,8 +53,8 @@ maxes = df.groupby(["dataset"]).sample_size.transform(max)
 df = df[df.sample_size == maxes]
 
 # Filter to only include one instance of the exact solutions (as they all have the same results)
-exact_results = df[(df.tsne_type == "exact")].groupby(["dataset"]).first().reset_index()
-accelerated_results = df[(df.tsne_type == "accelerated") & (df.splitting_strategy == "equal_length")]
+exact_results = df[(df.name == "Exact Poincare")].groupby(["dataset"]).first().reset_index()
+accelerated_results = df[(df.tsne_type == "Octree Lorentz")]
 
 # Iterate over the exact solutions and compare to the various approximated ones
 for i, record in enumerate(exact_results.to_records()):
