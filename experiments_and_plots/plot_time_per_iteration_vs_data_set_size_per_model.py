@@ -11,25 +11,41 @@ plots.
 ###########
 
 from pathlib import Path
+import os
 import pandas as pd
 import numpy as np
 import seaborn as sns
 from matplotlib import pyplot as plt
 
+from configs import setup_experiment
+
 ####################
 # READING THE DATA #
 ####################
-results_path = Path("./results/samples_per_data_set/")
+
+_, _, paths = setup_experiment([])
+
+print("Starting reading...")
+print("Reading OVERVIEW...", end="")
+results_path = Path(os.path.join(paths["results_path"], "samples_per_data_set"))
 df = pd.read_csv(results_path.joinpath("overview.csv"))
+print("OK")
 timings_dfs = []
-for record in df.to_records():
-    timing_df = pd.read_csv(record.run_directory.replace(".", str(results_path)) + "/timings.csv")
+cnt = 1
+rcrds = df.to_records()
+for record in rcrds:
+    csv_path = record.run_directory.replace(".", str(results_path)) + "/timings.csv"
+    print(f"({cnt}/{len(rcrds)}) Reading {csv_path}...", end="")
+    timing_df = pd.read_csv(csv_path)
     timing_df = timing_df[(timing_df.time_type == "tot_gradient")]
 
     for cn in df.columns:
         timing_df[cn] = record[cn]
     timings_dfs.append(timing_df)
+    print("OK")
+    cnt += 1
 
+print("Plotting...", end="")
 timings_df = pd.concat(timings_dfs, axis=0, ignore_index=True)
 timings_df["early_exag"] = np.repeat(False, timings_df.shape[0])
 timings_df.loc[timings_df.it_n <= 250, "early_exag"] = True
@@ -95,7 +111,7 @@ times_lineplot = sns.lineplot(
     x="sample_size",
     y="total_time",
     hue="dataset",
-    style="hyperbolic_model",
+    style="name",
     palette=palette,
     markers=False,
     linewidth=linewidth,
@@ -107,3 +123,5 @@ axs.set_xlabel("Log(Sample Size)")
 axs.set_ylabel("Log(Time (Seconds))")
 plt.tight_layout()
 plt.savefig(results_path.joinpath("time_per_it_vs_data_size_per_model.png"))
+
+print("OK")
