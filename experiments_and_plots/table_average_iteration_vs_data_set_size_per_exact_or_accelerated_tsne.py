@@ -42,7 +42,6 @@ for record in rcrds:
     print("OK")
     cnt += 1
 
-print("Plotting...", end="")
 timings_df = pd.concat(timings_dfs, axis=0, ignore_index=True)
 timings_df["early_exag"] = np.repeat(False, timings_df.shape[0])
 timings_df.loc[timings_df.it_n <= 250, "early_exag"] = True
