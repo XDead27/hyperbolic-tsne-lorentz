@@ -188,7 +188,6 @@ cpdef int check_is_inf_nan_all(double[:, :] ps) except -1 nogil:
                     raise ValueError("INF detected!")
 
 
-
 #
 # Helpers
 #

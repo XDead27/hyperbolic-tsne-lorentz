@@ -33,3 +33,6 @@ build
 # Outputs
 results
 temp
+
+# Cython debug files
+cython_debug

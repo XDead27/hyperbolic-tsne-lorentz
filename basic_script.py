@@ -22,7 +22,7 @@ results_path = os.path.join(paths["results_path"], "basic_script")
 only_animate = False
 seed = 42
 dataset = Datasets.MNIST  # the Datasets handler provides access to several data sets used throughout the repository
-num_points = 10000  # we use a subset for demonstration purposes, full MNIST has N=70000
+num_points = 1000  # we use a subset for demonstration purposes, full MNIST has N=70000
 perp = 30  # we use a perplexity of 30 in this example
 
 dataX, dataLabels, D, V, _ = load_data(

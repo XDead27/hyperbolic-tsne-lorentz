@@ -11,9 +11,13 @@ from os.path import join
 import setuptools
 from setuptools import setup, Extension
 
+from Cython.Build import cythonize
+
 ########################
 # TODO: Taken from https://github.com/pavlin-policar/openTSNE/blob/master/setup.py
 ########################
+
+DEBUG = 1
 
 try:
     from Cython.Distutils.build_ext import new_build_ext as build_ext
@@ -100,10 +104,17 @@ class CythonBuildExt(build_ext):
         extra_compile_args = []
         extra_link_args = []
 
+        if DEBUG:
+            extra_compile_args += ["-g"]
+            extra_link_args += ["-g"]
+
         # Optimization compiler/linker flags are added appropriately
         compiler = self.compiler.compiler_type
         if compiler == "unix":
-            extra_compile_args += ["-O3"]
+            if DEBUG:
+                extra_compile_args += ["-O0"]   # Debug
+            else:
+                extra_compile_args += ["-O3"]
         elif compiler == "msvc":
             extra_compile_args += ["/Ox", "/fp:fast"]
 
@@ -178,6 +189,8 @@ extensions = [
               language="c++"),
 ]
 
+if DEBUG:
+    extensions = cythonize(extensions, gdb_debug=True)
 
 def readme():
     with open("README.md", encoding="utf-8") as f:
