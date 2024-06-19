@@ -20,12 +20,17 @@ import matplotlib.pyplot as plt
 from hyperbolicTSNE.quality_evaluation_ import hyperbolic_nearest_neighbor_preservation
 from hyperbolicTSNE import Datasets, load_data
 
+from configs import setup_experiment
+
 #################################
 # GENERAL EXPERIMENT PARAMETERS #
 #################################
 
-BASE_DIR = Path("./results/full_size_one_run")
-DATASETS_DIR = "./datasets"  # directory to read the data from
+_, _, paths = setup_experiment([])
+
+BASE_DIR = Path(paths["results_path"])
+BASE_DIR = BASE_DIR.joinpath("full_size_one_run")
+DATASETS_DIR = paths["datasets_path"]
 
 # Constants
 NEIGHBORHOOD_SIZE = 100  # Neighborhood size to grab the k_max many neighbors from
@@ -33,6 +38,9 @@ K_START = 1  # Lowest point in the precision/recall curve
 K_MAX = 30  # Highest point in the precision/recall curve
 PERP = 30  # perplexity value to be used throughout the experiments
 hd_params = {"perplexity": PERP}
+
+c_fig, c_axs = plt.subplots(1, 4, sharex=True, sharey=True, figsize=(10, 32))
+i = 0
 
 # Iterate over all results,
 for dataset_dir in BASE_DIR.glob("*"):
@@ -86,9 +94,19 @@ for dataset_dir in BASE_DIR.glob("*"):
 
                                 # Add points to plot
                                 ax.plot(precisions, recalls, label=params['name'])
+                                c_axs[i].plot(precisions, recalls, label=params['name'])
 
                 ax.set_xlabel("Precision")
                 ax.set_ylabel("Recall")
                 ax.legend()
                 fig.savefig(size_dir.joinpath(f"{dataset_name}_prec-vs-rec_{subset_idx.shape[0]}.png"))
                 plt.close(fig)
+        c_axs[i].set_title(dataset_name)
+        c_axs[i].legend()
+        i += 1
+
+c_fig.supxlabel("Precision")
+c_fig.supylabel("Recall")
+
+plt.tight_layout()
+plt.show()
