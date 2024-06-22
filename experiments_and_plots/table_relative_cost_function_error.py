@@ -54,13 +54,13 @@ df = df[df.sample_size == maxes]
 
 # Filter to only include one instance of the exact solutions (as they all have the same results)
 exact_results = df[(df.name == "Exact Poincare")].groupby(["dataset"]).first().reset_index()
-accelerated_results = df[(df.tsne_type == "Octree Lorentz")]
+accelerated_results = df[(df.name == "Octree Lorentz")]
 
 # Iterate over the exact solutions and compare to the various approximated ones
 for i, record in enumerate(exact_results.to_records()):
     # Get the maximum iteration number and corresponding cost function for this exact record
     max_iteration, max_iteration_cf = max_iteration_cost_function(record)
-    print(f"{record.dataset} {record.tsne_type} {max_iteration} {max_iteration_cf}")
+    print(f"{record.dataset} {record.name} {max_iteration} {max_iteration_cf}")
 
     # Array to store the relative approximated cost function errors
     cf_errors_relative = []
@@ -70,13 +70,13 @@ for i, record in enumerate(exact_results.to_records()):
         # Get the maximum iteration number and corresponding cost function for the accelerated record
         max_iteration_accelerated, max_iteration_cf_accelerated = max_iteration_cost_function(accelerated_record)
         # Ensure that this record is for the correct data set and that it ran for the same number of iterations
-        if accelerated_record.dataset != record.dataset or max_iteration_accelerated != max_iteration:
-            raise (
-                f"When processing {record.dataset}, could not find an accelerated result with {max_iteration} "
-                f"iterations, found one with {max_iteration_accelerated} iterations."
-            )
+        # if accelerated_record.dataset != record.dataset or max_iteration_accelerated != max_iteration:
+        #     raise (
+        #         f"When processing {record.dataset}, could not find an accelerated result with {max_iteration} "
+        #         f"iterations, found one with {max_iteration_accelerated} iterations."
+        #     )
         print(
-            f"{accelerated_record.dataset} {accelerated_record.tsne_type} {max_iteration_accelerated} "
+            f"{accelerated_record.dataset} {accelerated_record.name} {max_iteration_accelerated} "
             f"{max_iteration_cf_accelerated}"
         )
         # Compute the relative error of the cost function

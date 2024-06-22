@@ -21,13 +21,13 @@ from configs import load_vars_env
 
 paths = load_vars_env()
 
-results_path = paths["results_path"] + "/timings_per_theta"
+results_path = os.path.join(paths["results_path"], "timings_per_theta")
 
 data = []
 for subdir, dirs, files in os.walk(results_path):
     for file in files:
         if str(os.path.basename(os.path.join(subdir, file))) == "timings.csv":
-            dataset = str(subdir).split('/')[-3]
+            dataset = str(subdir).split('/')[-2]
             theta = float(str(subdir).split('/')[-1].split('_')[-1])
             timing_df = pd.read_csv(os.path.join(subdir, file))
             timing_df = timing_df[(timing_df.time_type == "tot_gradient")]
@@ -74,4 +74,4 @@ times_lineplot.set(yscale='log')
 axs.set_title(f"Average Total Time per Iteration vs Theta")
 axs.set_xlabel("Theta")
 axs.set_ylabel("log(Time (Seconds))")
-plt.savefig(results_path + "/theta_timing_plot.png")
+plt.savefig(os.path.join(results_path, "theta_timing_plot.png"))

@@ -51,7 +51,7 @@ datasets = [
     # Datasets.WORDNET
 ]
 
-learning_rates = np.linspace(1000, 1, 20)
+learning_rates = np.logspace(0, 3, num=7)
 
 ###################
 # EXPERIMENT LOOP #
@@ -84,9 +84,9 @@ for dataset in datasets:  # Iterate over the data sets
 
         print(f"[learning_rate_experiment] Processing {dataset}, config_id ({config_id}) with LR: {lrn}")
 
-        opt_params = cfg["get_opt_params"](ci, dataX.shape[0])
         cfg["opt_params"]["learning_rate_main"] = dataX.shape[0] / (12 * lrn)
         cfg["opt_params"]["learning_rate_ex"] = dataX.shape[0] / (12 * 12 * lrn)
+        opt_params = cfg["opt_type"](**cfg["opt_params"])
 
         run_dir = Path(f"{BASE_DIR}/{dataset.name}/lrn_{lrn}/")
 

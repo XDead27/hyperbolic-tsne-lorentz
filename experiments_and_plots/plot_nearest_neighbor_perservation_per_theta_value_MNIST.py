@@ -10,6 +10,7 @@ script and creates a plot with one precision/recall curve per theta value.
 from pathlib import Path
 import numpy as np
 from matplotlib import pyplot as plt
+import matplotlib.cm as cm
 from hyperbolicTSNE import Datasets
 
 from configs import load_vars_env
@@ -24,6 +25,7 @@ BASE_DIR = paths["results_path"] + "/nnp_per_theta"
 
 # Constants
 dataset = Datasets.MNIST  # The dataset to run the experiment on
+cmap = cm.get_cmap('viridis', 11)
 
 ###################
 # EXPERIMENT LOOP #
@@ -44,7 +46,7 @@ for theta in [x / 10 for x in range(0, 11, 1)]:  # Iterate over the different va
     precisions = np.load(run_dir.joinpath(f"precisions_theta_{theta}.npy"))
     recalls = np.load(run_dir.joinpath(f"recalls_theta_{theta}.npy"))
 
-    ax.plot(precisions, recalls, label=f"{theta}")
+    ax.plot(precisions, recalls, label=f"{theta}", color=cmap(int(theta * 10)))
 
 ax.legend()
 fig.savefig(Path(BASE_DIR).joinpath(f"{dataset}_prec-vs-rec_per_theta.png"))

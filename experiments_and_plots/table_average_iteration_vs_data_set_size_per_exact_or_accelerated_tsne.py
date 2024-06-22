@@ -9,10 +9,12 @@ implementation.
 # IMPORTS #
 ###########
 
-import os
 from pathlib import Path
+import os
 import pandas as pd
 import numpy as np
+import seaborn as sns
+from matplotlib import pyplot as plt
 
 from configs import setup_experiment
 
@@ -20,7 +22,7 @@ from configs import setup_experiment
 # READING THE DATA #
 ####################
 
-_, cfgs, paths = setup_experiment([1000, 1100, 1010])
+_, cfgs, paths = setup_experiment([1010, 1000, 1100])
 
 print("Starting reading...")
 print("Reading OVERVIEW...", end="")
@@ -42,26 +44,25 @@ for record in rcrds:
     print("OK")
     cnt += 1
 
+print("Plotting...", end="")
 timings_df = pd.concat(timings_dfs, axis=0, ignore_index=True)
 timings_df["early_exag"] = np.repeat(False, timings_df.shape[0])
 timings_df.loc[timings_df.it_n <= 250, "early_exag"] = True
 del timings_dfs
 
-############################
-# COMPUTING THE STATISTICS #
-############################
-
 for cfg in cfgs:
     # Filter out only the exact, i.e., non-accelerated data
-    plot_times_df = timing_df.copy()
+    plot_times_df = timings_df.copy()
     plot_times_df = plot_times_df[(plot_times_df.name == cfg["name"])]
-
-    print(plot_times_df)
 
     # Print Min, Avg, Std, Max of the timings per dataset per size
     grouped = plot_times_df.groupby(["dataset", "sample_size"])
     print(f"Statistics {cfg['name']}:")
+    print("\nMIN:")
     print(grouped["total_time"].min())
+    print("\nMEAN:")
     print(grouped["total_time"].mean())
+    print("\nSTD:")
     print(grouped["total_time"].std())
+    print("\nMAX:")
     print(grouped["total_time"].max())

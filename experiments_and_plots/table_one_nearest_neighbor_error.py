@@ -15,21 +15,31 @@ from hyperbolicTSNE.data_loaders import Datasets, load_data
 from hyperbolicTSNE.hd_mat_ import _distance_matrix
 from hyperbolicTSNE.hyperbolic_barnes_hut.tsne import distance_py
 
+from configs import setup_experiment
+import os
+
 #################################
 # GENERAL EXPERIMENT PARAMETERS #
 #################################
 
-DATASETS_DIR = "../datasets"  # directory to read the data from
-results_path = Path("../results/timings_per_theta")
+ids = [
+    1010,
+    1100
+]
+_, cfgs, paths = setup_experiment(ids)
+
+DATASETS_DIR = paths["datasets_path"]
+results_path = Path(paths["results_path"])
+results_path = results_path.joinpath("samples_per_data_set")
 K_HYPERBOLIC_NEIGHBOR_APPROXIMATION = 15  # Number of nearest neighbors to consider in a Euclidean approximation to find
 # the actual nearest hyperbolic neighbor
 datasets = [
-    Datasets.LUKK,
+    # Datasets.LUKK,
     Datasets.MYELOID8000,
     Datasets.PLANARIA,
     Datasets.MNIST,
     Datasets.C_ELEGANS,
-    Datasets.WORDNET
+    # Datasets.WORDNET
 ]
 
 
@@ -37,11 +47,11 @@ datasets = [
 # Helper Methods #
 ##################
 def sort_dataframe(frame_to_be_sorted):
-    frame_to_be_sorted.loc[frame_to_be_sorted.dataset == "LUKK", "order"] = 1
+    # frame_to_be_sorted.loc[frame_to_be_sorted.dataset == "LUKK", "order"] = 1
     frame_to_be_sorted.loc[frame_to_be_sorted.dataset == "MYELOID8000", "order"] = 2
     frame_to_be_sorted.loc[frame_to_be_sorted.dataset == "PLANARIA", "order"] = 3
     frame_to_be_sorted.loc[frame_to_be_sorted.dataset == "MNIST", "order"] = 4
-    frame_to_be_sorted.loc[frame_to_be_sorted.dataset == "WORDNET", "order"] = 5
+    # frame_to_be_sorted.loc[frame_to_be_sorted.dataset == "WORDNET", "order"] = 5
     frame_to_be_sorted.loc[frame_to_be_sorted.dataset == "C_ELEGANS", "order"] = 6
     frame_to_be_sorted = frame_to_be_sorted.sort_values(by="order", ascending=True)
     return frame_to_be_sorted
@@ -89,21 +99,17 @@ data = []
 
 # Iterate over the datasets
 for dataset in datasets:
+    for cfg in cfgs:
+        print(f"[Table One Nearest Neighbor Error] Processing data {dataset.name}, nearest neighbor errors:")
+        dataX, labels = load_data(dataset, to_return='X_labels', data_home=DATASETS_DIR,)
 
-    print(f"[Table One Nearest Neighbor Error] Processing data {dataset.name}, nearest neighbor errors:")
-    labels = load_data(dataset, to_return='labels', data_home=DATASETS_DIR,)
+        # For each dataset, find the embedding quality of the exact embedding
+        config_dir = results_path.joinpath(dataset.name, f"size_{dataX.shape[0]}", f"configuration_{cfg['config_id']}")
 
-    # For each dataset, find the embedding quality of the exact embedding
-    exact_path = Path(f"{results_path}/{dataset.name}/theta_0.0/")
-    exact_one_nerest_neighbor_error = one_nearest_neighbor_error(exact_path)
-    print(f"Theta 0.0 (exact): {exact_one_nerest_neighbor_error}")
+        errs = []
+        for run_dir in config_dir.glob("*"):
+            if run_dir.is_dir() and run_dir.joinpath("final_embedding.npy").exists():
+                onne = one_nearest_neighbor_error(run_dir)
+                errs.append(onne)
 
-    theta_errors = []
-    # For each dataset, iterate over the values of theta
-    for theta in [0.5]:
-        theta_path = Path(f"{results_path}/{dataset.name}/theta_{theta}/")
-        theta_one_nearest_neighbor_error = one_nearest_neighbor_error(theta_path)
-        print(f"Theta {theta}: {theta_one_nearest_neighbor_error}")
-        theta_errors.append(theta_one_nearest_neighbor_error)
-    print(f"Average theta error: {sum(theta_errors) / len(theta_errors)}")
-    print()
+        print(f"{cfg['name']} error: {np.mean(errs)}")
