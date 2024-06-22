@@ -1,52 +1,31 @@
-# Accelerating hyperbolic t-SNE
+# Accelerating hyperbolic t-SNE using the Lorentz Model
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-This repository contains the code for the paper:
-> Skrodzki, M., van Geffen, H., Chaves-de-Plaza, N.F., Höllt, T., Eisemann, E. and Hildebrandt, K., Accelerating hyperbolic t-SNE, 2024, IEEE TCVG (in publication).
+This repository contains the code for the thesis:
+> Peter, D., Skrodzki, M., Eisemann, E. and Hildebrandt, K., Accelerating hyperbolic t-SNE using the Lorentz Model (2024).
 
-![teaser of the paper](teaser.png)
-
-If you use our code in your publications please consider citing:
-```
-@article{skrodzki2024hyperbolic,
-    title={Accelerating hyperbolic t-SNE},
-    author={Skrodzki, Martin and van Geffen, Hunter and Chaves-de-Plaza, Nicolas F. and H\"{o}llt, Thomas and Eisemann, Elmar and Hildebrandt, Klaus},
-    journal={IEEE Transactions on Visualization and Computer Graphics},
-    year={2024},
-    volume={TODO},
-    number={TODO},
-    pages={TODO},    
-    doi={TODO},
-    eprint={TODO}
-}
-```
+![MNIST_lorentz_hyperb_ani](https://github.com/XDead27/hyperbolic-tsne-lorentz/assets/32306451/8402c6fd-f631-4594-86c1-71c125b15065)
+![MNIST_lorentz_ani](https://github.com/XDead27/hyperbolic-tsne-lorentz/assets/32306451/9fb4c44d-fc60-4070-824f-7551b336f658)
 
 [Future link to paper]
 
 ## Setup
 
-You can set up the repository by building the provided Docker file calling `docker build --tag 'hyperbolic-tsne' .` in the folder where you cloned the repository. Alternatively, you can perform the following steps yourself:
+You can perform the following steps to setup the project:
 
 1. Install conda (we recommend using [miniconda](https://docs.conda.io/projects/miniconda/en/latest/))
-2. Create environment: `conda create --name=htsne python=3.9.16`
-3. Activate environment: `conda activate htsne`
+2. Create environment: `conda create --name=lo-htsne python=3.9.16`
+3. Activate environment: `conda activate lo-htsne`
 4. Install dependencies with pip: `pip install -r requirements.txt`
 5. Build Cython extensions: `python setup.py build_ext --inplace`
 6. Install hyperbolic-tsne package: `pip install .`
 7. To test installation run `python -c "from hyperbolicTSNE import HyperbolicTSNE"`. No errors should be raised and you should see the output `Please note that 'empty_sequence' uses the KL divergence with Barnes-Hut approximation (angle=0.5) by default.`.
-8. To re-create the teaser image of this repository, run `python experiments_and_plots/plot_tree_teaser.py` which will read the embedding data and labels from the `teaser_files` folder, plot the teaser image, and save it to the `teaser_files` folder.
 
 Note 1: 
 On macOS, the build process of the Cython extensions might yield an error if it cannot find OpenMP.
 This error can be ignored and the package will still be correctly installed and able to run. 
 The main consequence of this error is that the optimization iterations run slower.
-
-Note 2:
-When replicating the teaser image of the repository, depending on your random choice, the image you create might highlight a different point in the left embedding than what is shown in the teaser.
-We encourage you to change the seed and render several such images.
-The right-hand side will always show the same embedding, but the left-hand side will give you the query structure of the tree for different vertices.
-Thereby, you can see which regions are approximated (showing larger cells of the polar quadtree) and which are drilling down to the individual points (showing smaller cells of the polar quadtree).
 
 ## Data
 
@@ -66,9 +45,7 @@ Individual instructions per dataset:
 
 ## First steps
 
-There are two ways of getting started with the `hyperbolicTSNE` package.
-First, `example_basic_usage.ipynb` offers a step-by-step guide showing how to use the HyperbolicTSNE package to embed a high-dimensional dataset. 
-Second, the `example_different_params.py` script shows how to set up a script for quick experimentation. In this case, to compare the effect of different parameters.
+`basic_usage.py` offers a simple script to run the algorithm on a data-set.
 
 ## Replicating the paper results
 
