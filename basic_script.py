@@ -9,11 +9,12 @@ from hyperbolicTSNE.visualization import plot_poincare, plot_lorentz, animate
 from hyperbolicTSNE import load_data, Datasets, SequentialOptimizer, initialization, HyperbolicTSNE
 from hyperbolicTSNE.initializations_ import to_lorentz, from_lorentz
 
-
+# Choose id of config to be run 
 config_id = [1120]
 
+# Setup configs, paths
 ci, cfg, paths = setup_experiment(config_id)
-cfg = cfg[0]
+cfg = cfg[0]    # We are only interested into one configuration
 
 data_home = paths["datasets_path"]
 log_path = paths["logging_path"]
@@ -63,10 +64,6 @@ X_embedded = initialization(
     method="pca"
 )
 
-# if model == "lorentz":
-#     X_embedded = to_lorentz(X_embedded)
-
-
 # Initialize the embedder
 htsne = HyperbolicTSNE(
     init=X_embedded,
@@ -90,6 +87,7 @@ if not os.path.exists(results_path):
 fig_p = plot_poincare(hyperbolicEmbedding, dataLabels)
 fig_p.savefig(f"{results_path}/{dataset.name}_{model}_p.png" if len(sys.argv) <= 1 else f"{results_path}/{sys.argv[1]}_p.png")
 
+# We also want to plot the 3d version of the image and GIF if we are using the lorentz model
 if model == "lorentz":
     fig_l = plot_lorentz(find_last_embedding(log_path), dataLabels)
     fig_l.savefig(f"{results_path}/{dataset.name}_{model}_l.png" if len(sys.argv) <= 1 else f"{results_path}/{sys.argv[1]}_l.png")
