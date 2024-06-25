@@ -3,7 +3,9 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 This repository contains the code for the thesis:
-> Peter, D., Skrodzki, M., Eisemann, E. and Hildebrandt, K., Accelerating hyperbolic t-SNE using the Lorentz Model (2024).
+> Peter, D., Skrodzki, M., and Eisemann, E. , Accelerating hyperbolic t-SNE using the Lorentz Model (2024).
+
+This thesis was written for [the research project](https://github.com/TU-Delft-CSE/Research-Project) (2024 Q4) at [TU Delft](https://https//github.com/TU-Delft-CSE).
 
 ![MNIST_lorentz_hyperb_ani](https://github.com/XDead27/hyperbolic-tsne-lorentz/assets/32306451/8402c6fd-f631-4594-86c1-71c125b15065)
 ![MNIST_lorentz_ani](https://github.com/XDead27/hyperbolic-tsne-lorentz/assets/32306451/9fb4c44d-fc60-4070-824f-7551b336f658)
@@ -21,6 +23,7 @@ You can perform the following steps to setup the project:
 5. Build Cython extensions: `python setup.py build_ext --inplace`
 6. Install hyperbolic-tsne package: `pip install .`
 7. To test installation run `python -c "from hyperbolicTSNE import HyperbolicTSNE"`. No errors should be raised and you should see the output `Please note that 'empty_sequence' uses the KL divergence with Barnes-Hut approximation (angle=0.5) by default.`.
+8. Create `.env` file containing `RESULTS_DIR`, `DATASETS_DIR` and `LOGGING_DIR` paths.
 
 Note 1: 
 On macOS, the build process of the Cython extensions might yield an error if it cannot find OpenMP.
